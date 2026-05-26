@@ -1,0 +1,1 @@
+console.log("WebScribe Content Script has been injected!");
