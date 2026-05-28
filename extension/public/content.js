@@ -26,6 +26,14 @@ style.textContent = `
   .ws-color-swatch.ws-active-color { border-color: #000000; transform: scale(1.2); }
   .ws-color-picker { width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
   .ws-color-picker::-webkit-color-swatch { border-radius: 50%; border: 2px solid #000000; }
+  
+  /* --- PHASE 3 DOM STYLES --- */
+  .ws-highlight { border-radius: 3px; padding: 0 2px; }
+  .ws-sticky-note { position: absolute; width: 220px; background: #ffffff; border: 2px solid #000000; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); border-radius: 8px; z-index: 999997; display: flex; flex-direction: column; overflow: hidden; }
+  .ws-note-header { height: 24px; cursor: move; display: flex; justify-content: flex-end; align-items: center; padding: 0 8px; border-bottom: 2px solid #000000; }
+  .ws-note-close { cursor: pointer; font-size: 14px; font-weight: bold; color: #000; background: rgba(255,255,255,0.5); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+  .ws-note-close:hover { background: rgba(255,255,255,0.9); }
+  .ws-note-body { width: 100%; height: 120px; border: none; background: #fafafa; padding: 8px; resize: both; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; outline: none; box-sizing: border-box; color: #111827; }
 `;
 document.head.appendChild(style);
 
@@ -249,29 +257,20 @@ const checkStrokeIntersection = (x, y) => {
 };
 
 // --- DRAWING MOUSE EVENTS ---
-let isDrawing = false;
+let isCanvasDrawing = false;
 
 canvas.addEventListener('mousedown', (e) => {
   if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
-  isDrawing = true;
+  isCanvasDrawing = true;
   
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
-    currentStroke = {
-      tool: currentTool,
-      color: currentColor,
-      points: [{ x: e.pageX, y: e.pageY }]
-    };
-    
+    currentStroke = { tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
     ctx.beginPath();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (currentTool === 'pen') {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = currentColor;
-      ctx.lineWidth = 4;
+      ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; ctx.lineWidth = 4;
     } else {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = 25;
+      ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 25;
     }
     ctx.moveTo(e.pageX, e.pageY);
   } else if (currentTool === 'eraser-stroke') {
@@ -280,45 +279,33 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  if (!isDrawing) return;
-  
+  if (!isCanvasDrawing) return;
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     ctx.lineTo(e.pageX, e.pageY);
     ctx.stroke();
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
-    // --- VECTOR SEVERING LOGIC FOR NORMAL ERASER ---
+    // Vector Severing for Normal Eraser
     if (currentTool === 'eraser-normal') {
-      const eraserRadius = 15; // Hitbox radius of the normal eraser
-      
+      const eraserRadius = 15; 
       for (let i = strokes.length - 1; i >= 0; i--) {
         const stroke = strokes[i];
         if (stroke.tool !== 'pen') continue;
-
         let newStrokes = [];
         let currentSegment = [];
 
         for (let j = 0; j < stroke.points.length; j++) {
           const pt = stroke.points[j];
-          const distance = Math.hypot(pt.x - e.pageX, pt.y - e.pageY);
-
-          if (distance > eraserRadius) {
+          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) {
             currentSegment.push(pt);
           } else {
-            // Point erased. Cap off the current segment if it has data.
             if (currentSegment.length > 0) {
               newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
               currentSegment = [];
             }
           }
         }
-        
-        // Push the final segment if it has leftover data
-        if (currentSegment.length > 0) {
-          newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
-        }
-
-        // If the stroke was split into multiple segments (or completely erased), update the array
+        if (currentSegment.length > 0) newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
         if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) {
           strokes.splice(i, 1, ...newStrokes);
         }
@@ -330,12 +317,101 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseup', () => {
-  if (isDrawing) {
-    isDrawing = false;
-    if (currentStroke) {
-      strokes.push(currentStroke);
-      currentStroke = null;
-    }
+  if (isCanvasDrawing) {
+    isCanvasDrawing = false;
+    if (currentStroke) { strokes.push(currentStroke); currentStroke = null; }
     ctx.closePath();
+  }
+});
+
+// ==========================================
+// --- 8. THE DOM ENGINE (PHASE 3) ---
+// ==========================================
+
+// --- HIGHLIGHTER ---
+document.addEventListener('mouseup', () => {
+  if (currentTool === 'highlighter') {
+    const selection = window.getSelection();
+    if (!selection.isCollapsed && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const span = document.createElement('span');
+      span.className = 'ws-highlight';
+      span.style.backgroundColor = currentColor + '66'; // Appends '66' for 40% transparency
+      span.style.color = 'inherit';
+      
+      try {
+        range.surroundContents(span);
+      } catch (e) {
+        console.warn("WebScribe: Could not highlight across complex HTML tags.");
+      }
+      selection.removeAllRanges();
+    }
+  }
+});
+
+// --- STICKY NOTES ---
+document.addEventListener('click', (e) => {
+  if (currentTool === 'note') {
+    // Prevent creating notes if you click the menu or an existing note
+    if (e.target.closest('#ws-wrapper') || e.target.closest('.ws-sticky-note')) return;
+
+    // Create the note container
+    const note = document.createElement('div');
+    note.className = 'ws-sticky-note';
+    note.style.left = e.pageX + 'px';
+    note.style.top = e.pageY + 'px';
+
+    // Create the header (Drag handle)
+    const header = document.createElement('div');
+    header.className = 'ws-note-header';
+    header.style.backgroundColor = currentColor; // Match current chosen color!
+
+    // Create the Close Button
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'ws-note-close';
+    closeBtn.innerHTML = '✖';
+    closeBtn.addEventListener('click', () => note.remove());
+
+    header.appendChild(closeBtn);
+    
+    // Create the Text Area
+    const textArea = document.createElement('textarea');
+    textArea.className = 'ws-note-body';
+    textArea.placeholder = 'Type a note...';
+    
+    note.appendChild(header);
+    note.appendChild(textArea);
+    document.body.appendChild(note);
+
+    // --- NOTE DRAGGING LOGIC ---
+    let isDraggingNote = false;
+    let nStartX, nStartY, nStartLeft, nStartTop;
+
+    header.addEventListener('mousedown', (ev) => {
+      isDraggingNote = true;
+      nStartX = ev.clientX;
+      nStartY = ev.clientY;
+      nStartLeft = parseInt(note.style.left || 0, 10);
+      nStartTop = parseInt(note.style.top || 0, 10);
+      ev.preventDefault();
+    });
+
+    const doNoteDrag = (ev) => {
+      if (!isDraggingNote) return;
+      note.style.left = nStartLeft + (ev.clientX - nStartX) + 'px';
+      note.style.top = nStartTop + (ev.clientY - nStartY) + 'px';
+    };
+
+    const stopNoteDrag = () => {
+      isDraggingNote = false;
+    };
+
+    document.addEventListener('mousemove', doNoteDrag);
+    document.addEventListener('mouseup', stopNoteDrag);
+    
+    // Automatically switch back to cursor so you don't spawn 10 notes by accident
+    currentTool = 'cursor';
+    updateActiveButton();
+    updateCanvasInteractivity();
   }
 });
