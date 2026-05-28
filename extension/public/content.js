@@ -3,7 +3,9 @@ let currentTool = 'cursor';
 let currentColor = '#ffeb3b';
 let isMenuOpen = true;
 let isEraserOpen = false;
-let actionHistory = []; // The Global Action Stack for Undo
+let actionHistory = []; 
+let redoHistory = []; // New Global Stack for Redo
+let isVisible = true; 
 
 // --- 2. INJECT ULTRA-MODERN BOLD CSS ---
 const style = document.createElement('style');
@@ -28,13 +30,28 @@ style.textContent = `
   .ws-color-picker { width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
   .ws-color-picker::-webkit-color-swatch { border-radius: 50%; border: 2px solid #000000; }
   
+  /* --- CUSTOM MODAL STYLES --- */
+  .ws-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.4); backdrop-filter: blur(3px); z-index: 9999999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+  .ws-modal-overlay.ws-show { opacity: 1; pointer-events: auto; }
+  .ws-modal { background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 24px; box-shadow: 8px 8px 0 rgba(0,0,0,0.2); text-align: center; max-width: 320px; transform: translateY(20px); transition: transform 0.2s ease; font-family: 'Segoe UI', system-ui, sans-serif; }
+  .ws-modal-overlay.ws-show .ws-modal { transform: translateY(0); }
+  .ws-modal-title { margin: 0 0 10px 0; font-size: 20px; font-weight: bold; color: #000000; }
+  .ws-modal-text { margin: 0 0 24px 0; font-size: 14px; color: #4b5563; line-height: 1.4; }
+  .ws-modal-actions { display: flex; gap: 12px; justify-content: center; }
+  .ws-modal-btn { padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; border: 2px solid #000000; transition: all 0.1s; }
+  .ws-btn-cancel { background: #ffffff; color: #000000; }
+  .ws-btn-cancel:hover { background: #f3f4f6; }
+  .ws-btn-confirm { background: #ef4444; color: #ffffff; }
+  .ws-btn-confirm:hover { background: #dc2626; box-shadow: 2px 2px 0 #000000; transform: translate(-2px, -2px); }
+
   /* --- DOM STYLES --- */
-  .ws-highlight { border-radius: 3px; padding: 0 2px; transition: background 0.1s; }
+  .ws-highlight { border-radius: 3px; padding: 0 2px; transition: background 0.2s; }
   .ws-sticky-note { 
     position: absolute; width: 220px; background: #ffffff; 
     border: 3px solid #000000; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); 
     border-radius: 12px; z-index: 999997; display: flex; flex-direction: column; 
     overflow: hidden; resize: both; min-width: 150px; min-height: 100px;
+    transition: opacity 0.2s;
   }
   .ws-note-header { 
     height: 28px; cursor: move; display: flex; justify-content: flex-end; 
@@ -48,10 +65,11 @@ style.textContent = `
     outline: none; box-sizing: border-box; color: #111827; flex-grow: 1; 
     resize: none !important; overflow-y: auto;
   }
+  #ws-canvas { transition: opacity 0.2s; }
 `;
 document.head.appendChild(style);
 
-// --- 3. BUILD DOM STRUCTURE ---
+// --- 3. BUILD DOM & MODAL STRUCTURE ---
 const wrapper = document.createElement('div');
 wrapper.id = 'ws-wrapper';
 
@@ -63,6 +81,34 @@ wrapper.appendChild(toggleBtn);
 const menu = document.createElement('div');
 menu.id = 'ws-menu';
 wrapper.appendChild(menu);
+
+// Custom Modal Setup
+const modalOverlay = document.createElement('div');
+modalOverlay.className = 'ws-modal-overlay';
+modalOverlay.innerHTML = `
+  <div class="ws-modal">
+    <h3 class="ws-modal-title">Clear Everything?</h3>
+    <p class="ws-modal-text">This will permanently delete all notes, highlights, and drawings. You cannot undo this action.</p>
+    <div class="ws-modal-actions">
+      <button class="ws-modal-btn ws-btn-cancel" id="ws-cancel-clear">Cancel</button>
+      <button class="ws-modal-btn ws-btn-confirm" id="ws-confirm-clear">Yes, clear it</button>
+    </div>
+  </div>
+`;
+document.body.appendChild(modalOverlay);
+
+document.getElementById('ws-cancel-clear').addEventListener('click', () => {
+  modalOverlay.classList.remove('ws-show');
+});
+document.getElementById('ws-confirm-clear').addEventListener('click', () => {
+  strokes = []; redrawCanvas();
+  document.querySelectorAll('.ws-sticky-note').forEach(n => n.remove());
+  document.querySelectorAll('.ws-highlight').forEach(h => h.replaceWith(...h.childNodes));
+  actionHistory = [];
+  redoHistory = [];
+  modalOverlay.classList.remove('ws-show');
+});
+
 
 // --- 4. DRAG AND DROP LOGIC ---
 let isMenuDragging = false;
@@ -105,6 +151,7 @@ const createToolButton = (id, label, isTool = true) => {
   btn.innerHTML = label;
   if (isTool) {
     btn.addEventListener('click', () => {
+      if (!isVisible) visibilityBtn.click(); 
       currentTool = id;
       updateActiveButton();
       updateCanvasInteractivity(); 
@@ -136,45 +183,91 @@ menu.appendChild(eraserMainBtn);
 menu.appendChild(eraserContainer);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
 
-// --- PHASE 4: UNDO & CLEAR ALL LOGIC ---
-const undoBtn = createToolButton('undo', '↩️ Undo', false);
+// --- PHASE 5/6: ACTIONS & HOTKEYS ---
+const visibilityBtn = createToolButton('toggle-visibility', '👁️ Hide All', false);
+visibilityBtn.addEventListener('click', () => {
+  isVisible = !isVisible;
+  visibilityBtn.innerHTML = isVisible ? '👁️ Hide All' : '👀 Show All';
+  
+  canvas.style.opacity = isVisible ? '1' : '0';
+  canvas.style.pointerEvents = isVisible ? (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool) ? 'auto' : 'none') : 'none';
+  
+  document.querySelectorAll('.ws-sticky-note').forEach(n => {
+    n.style.opacity = isVisible ? '1' : '0';
+    n.style.pointerEvents = isVisible ? 'auto' : 'none'; 
+  });
+  
+  document.querySelectorAll('.ws-highlight').forEach(h => {
+    h.style.backgroundColor = isVisible ? h.dataset.bgColor : 'transparent';
+  });
+});
+menu.appendChild(visibilityBtn);
+
+const undoBtn = createToolButton('undo', '↩️ Undo (Ctrl+Z)', false);
 undoBtn.addEventListener('click', () => {
   if (actionHistory.length === 0) return;
   const lastAction = actionHistory.pop();
+  
+  redoHistory.push(lastAction); // Save to Redo stack
 
   if (lastAction.type === 'canvas') {
-    // Restore previous canvas state
-    strokes = lastAction.previousStrokes;
+    strokes = JSON.parse(JSON.stringify(lastAction.previousStrokes));
     redrawCanvas();
   } else if (lastAction.type === 'note') {
-    // Remove the created note
     if (document.body.contains(lastAction.element)) lastAction.element.remove();
   } else if (lastAction.type === 'highlight') {
-    // Unwrap the highlight span
-    if (document.body.contains(lastAction.element)) {
-      lastAction.element.replaceWith(...lastAction.element.childNodes);
-    }
+    // Instead of destroying the span, just hide it so we can easily Redo it
+    lastAction.element.style.backgroundColor = 'transparent';
+    lastAction.element.classList.remove('ws-highlight');
+  }
+});
+
+const redoBtn = createToolButton('redo', '🔁 Redo (Ctrl+Y)', false);
+redoBtn.addEventListener('click', () => {
+  if (redoHistory.length === 0) return;
+  const actionToRestore = redoHistory.pop();
+  
+  actionHistory.push(actionToRestore); // Push back to Undo stack
+
+  if (actionToRestore.type === 'canvas') {
+    strokes = JSON.parse(JSON.stringify(actionToRestore.currentStrokes));
+    redrawCanvas();
+  } else if (actionToRestore.type === 'note') {
+    document.body.appendChild(actionToRestore.element);
+  } else if (actionToRestore.type === 'highlight') {
+    actionToRestore.element.style.backgroundColor = actionToRestore.element.dataset.bgColor;
+    actionToRestore.element.classList.add('ws-highlight');
   }
 });
 
 const clearBtn = createToolButton('clear-all', '🗑️ Clear all', false);
 clearBtn.addEventListener('click', () => {
-  if (confirm('Are you sure you want to clear all notes, highlights, and drawings?')) {
-    // Clear Canvas
-    strokes = [];
-    redrawCanvas();
-    // Clear DOM Notes
-    document.querySelectorAll('.ws-sticky-note').forEach(n => n.remove());
-    // Clear DOM Highlights
-    document.querySelectorAll('.ws-highlight').forEach(h => h.replaceWith(...h.childNodes));
-    // Empty History
-    actionHistory = [];
-  }
+  modalOverlay.classList.add('ws-show');
 });
 
 menu.appendChild(undoBtn);
+menu.appendChild(redoBtn);
 menu.appendChild(clearBtn);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
+
+// Global Hotkeys
+document.addEventListener('keydown', (e) => {
+  const activeNode = document.activeElement.nodeName;
+  if (activeNode === 'TEXTAREA' || activeNode === 'INPUT') return;
+
+  // Ctrl+Z or Cmd+Z
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault(); 
+    if (e.shiftKey) { redoBtn.click(); } // Catch Ctrl+Shift+Z for Redo
+    else { undoBtn.click(); }
+  }
+  
+  // Ctrl+Y or Cmd+Y
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redoBtn.click();
+  }
+});
 
 // --- 6. ADVANCED COLOR PICKER ---
 const colorSection = document.createElement('div');
@@ -238,7 +331,7 @@ const ctx = canvas.getContext('2d');
 
 let strokes = [];       
 let currentStroke = null; 
-let snapshotBeforeDraw = []; // For Undo History
+let snapshotBeforeDraw = []; 
 
 const drawSingleStroke = (stroke) => {
   if (stroke.points.length < 1) return;
@@ -266,6 +359,7 @@ const resizeCanvas = () => {
 resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
 const updateCanvasInteractivity = () => {
+  if (!isVisible) return; 
   if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) { canvas.style.pointerEvents = 'auto'; } 
   else { canvas.style.pointerEvents = 'none'; }
 };
@@ -287,9 +381,8 @@ const checkStrokeIntersection = (x, y) => {
 let isDrawingCanvas = false;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
+  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool) || !isVisible) return;
   
-  // Save state for Undo BEFORE modifying it
   snapshotBeforeDraw = JSON.parse(JSON.stringify(strokes)); 
   
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
@@ -302,6 +395,8 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mousemove', (e) => {
+  if (!isVisible) return;
+
   if (currentTool === 'eraser-stroke') {
      if (e.buttons !== 1) return;
      checkStrokeIntersection(e.pageX, e.pageY);
@@ -342,8 +437,9 @@ canvas.addEventListener('mouseup', () => {
     isDrawingCanvas = false; 
     redrawCanvas();
     
-    // Push the canvas action to the Global History!
-    actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw });
+    // Save current strokes state alongside previous state for Redo logic
+    actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw, currentStrokes: JSON.parse(JSON.stringify(strokes)) });
+    redoHistory = []; // Wipe redo stack when a new action is performed
   }
 });
 
@@ -354,18 +450,22 @@ canvas.addEventListener('mouseup', () => {
 
 // --- HIGHLIGHTER ---
 document.addEventListener('mouseup', () => {
-  if (currentTool === 'highlighter') {
+  if (currentTool === 'highlighter' && isVisible) {
     const selection = window.getSelection();
     if (!selection.isCollapsed && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       const span = document.createElement('span');
       span.className = 'ws-highlight';
-      span.style.backgroundColor = currentColor + '66'; 
+      
+      const highlightColor = currentColor + '66';
+      span.dataset.bgColor = highlightColor;
+      span.style.backgroundColor = highlightColor; 
       span.style.color = 'inherit';
+      
       try { 
         range.surroundContents(span); 
-        // Push DOM action to History!
         actionHistory.push({ type: 'highlight', element: span });
+        redoHistory = []; // Wipe redo stack when a new action is performed
       } catch (er) { console.warn("WebScribe: Text structure too complex to highlight."); }
       selection.removeAllRanges();
     }
@@ -373,15 +473,13 @@ document.addEventListener('mouseup', () => {
 });
 
 const checkDomHighlightEraser = (e) => {
-    if (currentTool === 'eraser-stroke') {
+    if (currentTool === 'eraser-stroke' && isVisible) {
         canvas.style.pointerEvents = 'none'; 
         const element = document.elementFromPoint(e.clientX, e.clientY);
         canvas.style.pointerEvents = 'auto'; 
         
         const highlight = element?.closest('.ws-highlight');
-        if (highlight) {
-            highlight.replaceWith(...highlight.childNodes); 
-        }
+        if (highlight) { highlight.replaceWith(...highlight.childNodes); }
     }
 };
 
@@ -392,8 +490,8 @@ canvas.addEventListener('mousemove', (e) => {
 
 // --- STICKY NOTES ---
 document.addEventListener('click', (e) => {
-  if (currentTool === 'note') {
-    if (e.target.closest('#ws-wrapper') || e.target.closest('.ws-sticky-note')) return;
+  if (currentTool === 'note' && isVisible) {
+    if (e.target.closest('#ws-wrapper') || e.target.closest('.ws-sticky-note') || e.target.closest('.ws-modal-overlay')) return;
 
     const note = document.createElement('div');
     note.className = 'ws-sticky-note';
@@ -419,8 +517,8 @@ document.addEventListener('click', (e) => {
     note.appendChild(textArea);
     document.body.appendChild(note);
 
-    // Push Note DOM action to History!
     actionHistory.push({ type: 'note', element: note });
+    redoHistory = []; // Wipe redo stack when a new action is performed
 
     let isDraggingNote = false;
     let nStartX, nStartY, nStartLeft, nStartTop;
