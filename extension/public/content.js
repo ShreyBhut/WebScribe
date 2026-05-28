@@ -1,62 +1,29 @@
 // --- 1. STATE MANAGEMENT ---
 let currentTool = 'cursor';
-let currentColor = '#ffeb3b'; // Default yellow
+let currentColor = '#ffeb3b';
 let isMenuOpen = true;
 let isEraserOpen = false;
 
 // --- 2. INJECT ULTRA-MODERN BOLD CSS ---
 const style = document.createElement('style');
 style.textContent = `
-  #ws-wrapper {
-    position: fixed; top: 15px; right: 15px; z-index: 999999;
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    user-select: none;
-  }
-  .ws-main-toggle {
-    background: #000000; border: 3px solid #000000; border-radius: 30px;
-    padding: 8px 14px; cursor: move; font-weight: bold; font-size: 13px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #ffffff;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    transition: transform 0.1s, background-color 0.2s;
-  }
+  #ws-wrapper { position: fixed; top: 15px; right: 15px; z-index: 999999; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
+  .ws-main-toggle { background: #000000; border: 3px solid #000000; border-radius: 30px; padding: 8px 14px; cursor: move; font-weight: bold; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #ffffff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: transform 0.1s, background-color 0.2s; }
   .ws-main-toggle:hover { background: #222222; }
-  
-  #ws-menu {
-    background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
-    border: 3px solid #000000; border-radius: 14px; padding: 6px;
-    margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2); 
-    width: 125px; /* Even smaller breadth */
-    transition: opacity 0.2s;
-  }
+  #ws-menu { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); border: 3px solid #000000; border-radius: 14px; padding: 6px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 125px; transition: opacity 0.2s; }
   .ws-menu-hidden { display: none !important; }
-  
-  .ws-btn {
-    background: transparent; border: none; padding: 6px 8px;
-    text-align: left; cursor: pointer; border-radius: 6px;
-    font-size: 12px; color: #111827; display: flex; align-items: center; gap: 6px;
-    font-weight: bold; /* Bold Option Text */
-    transition: background 0.2s; width: 100%;
-  }
+  .ws-btn { background: transparent; border: none; padding: 6px 8px; text-align: left; cursor: pointer; border-radius: 6px; font-size: 12px; color: #111827; display: flex; align-items: center; gap: 6px; font-weight: bold; transition: background 0.2s; width: 100%; }
   .ws-btn:hover { background: #f3f4f6; }
   .ws-btn.ws-active { background: #000000; color: #ffffff; }
-  
   .ws-eraser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #000000; margin-left: 8px; }
   .ws-eraser-container.ws-show { display: flex; }
-  
   .ws-divider { height: 2px; background: #000000; margin: 4px 0; }
-  
   .ws-color-section { display: flex; flex-direction: column; gap: 6px; padding: 4px; font-size: 12px; font-weight: bold; color: #111827; }
   .ws-custom-row { display: flex; align-items: center; justify-content: space-between; }
   .ws-color-row { display: flex; gap: 6px; justify-content: space-between; margin-top: 2px; }
-  
-  .ws-color-swatch { 
-    width: 16px; height: 16px; border-radius: 50%; cursor: pointer; 
-    border: 2px solid transparent; transition: transform 0.1s; 
-  }
+  .ws-color-swatch { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s; }
   .ws-color-swatch:hover { transform: scale(1.2); }
   .ws-color-swatch.ws-active-color { border-color: #000000; transform: scale(1.2); }
-  
   .ws-color-picker { width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
   .ws-color-picker::-webkit-color-swatch { border-radius: 50%; border: 2px solid #000000; }
 `;
@@ -75,41 +42,28 @@ const menu = document.createElement('div');
 menu.id = 'ws-menu';
 wrapper.appendChild(menu);
 
-// --- 4. DRAG AND DROP HANDLER LOGIC ---
+// --- 4. DRAG AND DROP LOGIC ---
 let isDragging = false;
 let startX, startY, initialX, initialY;
 let hasMoved = false;
 
 toggleBtn.addEventListener('mousedown', (e) => {
-  isDragging = true;
-  hasMoved = false;
-  startX = e.clientX;
-  startY = e.clientY;
-  
+  isDragging = true; hasMoved = false;
+  startX = e.clientX; startY = e.clientY;
   const rect = wrapper.getBoundingClientRect();
-  initialX = rect.left;
-  initialY = rect.top;
-  
-  e.preventDefault(); // Prevents messy browser text highlighting during drag
+  initialX = rect.left; initialY = rect.top;
+  e.preventDefault();
 });
 
 document.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
-  const dx = e.clientX - startX;
-  const dy = e.clientY - startY;
-  
-  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-    hasMoved = true;
-  }
-  
-  wrapper.style.left = `${initialX + dx}px`;
-  wrapper.style.top = `${initialY + dy}px`;
-  wrapper.style.right = 'auto'; // Sever pinning to the right edge
+  const dx = e.clientX - startX; const dy = e.clientY - startY;
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved = true;
+  wrapper.style.left = `${initialX + dx}px`; wrapper.style.top = `${initialY + dy}px`; wrapper.style.right = 'auto';
 });
 
 document.addEventListener('mouseup', () => {
   if (isDragging && !hasMoved) {
-    // Treat as a clean click if the menu barely moved
     isMenuOpen = !isMenuOpen;
     menu.classList.toggle('ws-menu-hidden', !isMenuOpen);
   }
@@ -132,6 +86,7 @@ const createToolButton = (id, label, isTool = true) => {
     btn.addEventListener('click', () => {
       currentTool = id;
       updateActiveButton();
+      updateCanvasInteractivity(); // Trigger Canvas Engine Update
       console.log("Tool active:", currentTool);
     });
   }
@@ -143,7 +98,6 @@ menu.appendChild(createToolButton('highlighter', '🖍️ Highlight'));
 menu.appendChild(createToolButton('pen', '🖋️ Pen'));
 menu.appendChild(createToolButton('note', '📝 Note'));
 
-// Nested Eraser Structure
 const eraserMainBtn = createToolButton('eraser-toggle', '🧼 Eraser', false);
 const eraserContainer = document.createElement('div');
 eraserContainer.className = 'ws-eraser-container';
@@ -162,21 +116,16 @@ menu.appendChild(eraserMainBtn);
 menu.appendChild(eraserContainer);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
 
-// Actions
 const undoBtn = createToolButton('undo', '↩️ Undo', false);
-undoBtn.addEventListener('click', () => console.log("Undo triggered"));
 const clearBtn = createToolButton('clear-all', '🗑️ Clear all', false);
-clearBtn.addEventListener('click', () => console.log("Clear all triggered"));
-
 menu.appendChild(undoBtn);
 menu.appendChild(clearBtn);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
 
-// --- 6. ADVANCED COLOR PICKER (Stacked Rows) ---
+// --- 6. ADVANCED COLOR PICKER ---
 const colorSection = document.createElement('div');
 colorSection.className = 'ws-color-section';
 
-// Row 1: Label + Custom Picker
 const customRow = document.createElement('div');
 customRow.className = 'ws-custom-row';
 customRow.innerText = '🎨 Colour:';
@@ -188,21 +137,14 @@ customColorInput.className = 'ws-color-picker';
 customColorInput.addEventListener('input', (e) => {
   currentColor = e.target.value;
   document.querySelectorAll('.ws-color-swatch').forEach(s => s.classList.remove('ws-active-color'));
-  console.log("Color code:", currentColor);
 });
 customRow.appendChild(customColorInput);
 colorSection.appendChild(customRow);
 
-// Row 2: 4 Basics Matrix
 const colorRow = document.createElement('div');
 colorRow.className = 'ws-color-row';
 
-const basics = [
-  { hex: '#ef4444' }, // Red
-  { hex: '#22c55e' }, // Green
-  { hex: '#eab308' }, // Yellow
-  { hex: '#3b82f6' }  // Blue
-];
+const basics = [ { hex: '#ef4444' }, { hex: '#22c55e' }, { hex: '#eab308' }, { hex: '#3b82f6' } ];
 
 const updateActiveColor = () => {
   document.querySelectorAll('.ws-color-swatch').forEach(swatch => {
@@ -215,12 +157,10 @@ basics.forEach(b => {
   swatch.className = 'ws-color-swatch';
   swatch.style.backgroundColor = b.hex;
   swatch.dataset.hex = b.hex;
-  
   swatch.addEventListener('click', () => {
     currentColor = b.hex;
     customColorInput.value = b.hex;
     updateActiveColor();
-    console.log("Color hex chosen:", currentColor);
   });
   colorRow.appendChild(swatch);
 });
@@ -228,7 +168,83 @@ basics.forEach(b => {
 colorSection.appendChild(colorRow);
 menu.appendChild(colorSection);
 
-// Initialize
+// Initialize Menu
 updateActiveButton();
 document.body.appendChild(wrapper);
-console.log("WebScribe Bold Draggable UI Injected!");
+
+
+// ==========================================
+// --- 7. THE CANVAS ENGINE (PHASE 2) ---
+// ==========================================
+
+const canvas = document.createElement('canvas');
+canvas.id = 'ws-canvas';
+canvas.style.cssText = `
+  position: absolute; 
+  top: 0; 
+  left: 0; 
+  z-index: 999998; /* Under the menu, over the website */
+  pointer-events: none; /* Let normal clicks pass through by default */
+`;
+document.body.appendChild(canvas);
+
+const ctx = canvas.getContext('2d');
+
+// Size the canvas to cover the entire scrollable webpage
+const resizeCanvas = () => {
+  canvas.width = document.documentElement.scrollWidth;
+  canvas.height = document.documentElement.scrollHeight;
+};
+resizeCanvas();
+// If the user resizes their browser window, recalculate the canvas size
+window.addEventListener('resize', resizeCanvas);
+
+// Toggle Canvas interactivity based on the current tool
+const updateCanvasInteractivity = () => {
+  if (currentTool === 'pen' || currentTool === 'eraser-normal' || currentTool === 'eraser-stroke') {
+    canvas.style.pointerEvents = 'auto'; // Canvas intercepts mouse
+  } else {
+    canvas.style.pointerEvents = 'none'; // Clicks pass through to the website
+  }
+};
+
+// Drawing State
+let isDrawing = false;
+
+canvas.addEventListener('mousedown', (e) => {
+  if (currentTool !== 'pen' && currentTool !== 'eraser-normal') return;
+  isDrawing = true;
+  ctx.beginPath();
+  // pageX/pageY ensures we draw at the correct spot even if scrolled down
+  ctx.moveTo(e.pageX, e.pageY); 
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!isDrawing) return;
+  
+  if (currentTool === 'pen') {
+    ctx.globalCompositeOperation = 'source-over'; // Normal drawing mode
+    ctx.strokeStyle = currentColor;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineTo(e.pageX, e.pageY);
+    ctx.stroke();
+  } 
+  else if (currentTool === 'eraser-normal') {
+    ctx.globalCompositeOperation = 'destination-out'; // Erasing mode (makes pixels transparent)
+    ctx.lineWidth = 25; // Much thicker for easy erasing
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineTo(e.pageX, e.pageY);
+    ctx.stroke();
+  }
+});
+
+canvas.addEventListener('mouseup', () => {
+  if (isDrawing) {
+    isDrawing = false;
+    ctx.closePath();
+    // (We will save this drawn path into an array in Phase 4 for Undo/Stroke Eraser)
+  }
+});
