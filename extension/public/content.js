@@ -27,13 +27,26 @@ style.textContent = `
   .ws-color-picker { width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
   .ws-color-picker::-webkit-color-swatch { border-radius: 50%; border: 2px solid #000000; }
   
-  /* --- PHASE 3 DOM STYLES --- */
-  .ws-highlight { border-radius: 3px; padding: 0 2px; }
-  .ws-sticky-note { position: absolute; width: 220px; background: #ffffff; border: 2px solid #000000; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); border-radius: 8px; z-index: 999997; display: flex; flex-direction: column; overflow: hidden; }
-  .ws-note-header { height: 24px; cursor: move; display: flex; justify-content: flex-end; align-items: center; padding: 0 8px; border-bottom: 2px solid #000000; }
-  .ws-note-close { cursor: pointer; font-size: 14px; font-weight: bold; color: #000; background: rgba(255,255,255,0.5); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
-  .ws-note-close:hover { background: rgba(255,255,255,0.9); }
-  .ws-note-body { width: 100%; height: 120px; border: none; background: #fafafa; padding: 8px; resize: both; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; outline: none; box-sizing: border-box; color: #111827; }
+  /* --- DOM STYLES --- */
+  .ws-highlight { border-radius: 3px; padding: 0 2px; transition: background 0.1s; }
+  .ws-sticky-note { 
+    position: absolute; width: 220px; background: #ffffff; 
+    border: 3px solid #000000; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); 
+    border-radius: 12px; z-index: 999997; display: flex; flex-direction: column; 
+    overflow: hidden; resize: both; min-width: 150px; min-height: 100px;
+  }
+  .ws-note-header { 
+    height: 28px; cursor: move; display: flex; justify-content: flex-end; 
+    align-items: center; padding: 0 10px; border-bottom: 3px solid #000000; flex-shrink: 0;
+  }
+  .ws-note-close { cursor: pointer; font-size: 16px; font-weight: bold; color: #000; background: rgba(255,255,255,0.7); border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+  .ws-note-close:hover { background: rgba(255,255,255,1); }
+  .ws-note-body { 
+    width: 100%; border: none; background: #fafafa; padding: 10px; 
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; 
+    outline: none; box-sizing: border-box; color: #111827; flex-grow: 1; 
+    resize: none !important; overflow-y: auto;
+  }
 `;
 document.head.appendChild(style);
 
@@ -51,31 +64,30 @@ menu.id = 'ws-menu';
 wrapper.appendChild(menu);
 
 // --- 4. DRAG AND DROP LOGIC ---
-let isDragging = false;
-let startX, startY, initialX, initialY;
-let hasMoved = false;
+let isMenuDragging = false;
+let mStartX, mStartY, mInitialLeft, mInitialTop, mHasMovedMenu;
 
 toggleBtn.addEventListener('mousedown', (e) => {
-  isDragging = true; hasMoved = false;
-  startX = e.clientX; startY = e.clientY;
+  isMenuDragging = true; mHasMovedMenu = false;
+  mStartX = e.clientX; mStartY = e.clientY;
   const rect = wrapper.getBoundingClientRect();
-  initialX = rect.left; initialY = rect.top;
+  mInitialLeft = rect.left; mInitialTop = rect.top;
   e.preventDefault();
 });
 
 document.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  const dx = e.clientX - startX; const dy = e.clientY - startY;
-  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved = true;
-  wrapper.style.left = `${initialX + dx}px`; wrapper.style.top = `${initialY + dy}px`; wrapper.style.right = 'auto';
+  if (!isMenuDragging) return;
+  const dx = e.clientX - mStartX; const dy = e.clientY - mStartY;
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) mHasMovedMenu = true;
+  wrapper.style.left = `${mInitialLeft + dx}px`; wrapper.style.top = `${mInitialTop + dy}px`; wrapper.style.right = 'auto';
 });
 
 document.addEventListener('mouseup', () => {
-  if (isDragging && !hasMoved) {
+  if (isMenuDragging && !mHasMovedMenu) {
     isMenuOpen = !isMenuOpen;
     menu.classList.toggle('ws-menu-hidden', !isMenuOpen);
   }
-  isDragging = false;
+  isMenuDragging = false;
 });
 
 // --- 5. TOOLS GENERATOR ---
@@ -181,108 +193,87 @@ document.body.appendChild(wrapper);
 
 
 // ==========================================
-// --- 7. THE UPGRADED CANVAS ENGINE ---
+// --- 7. THE UNIFIED VECTOR CANVAS ENGINE ---
 // ==========================================
 
 const canvas = document.createElement('canvas');
 canvas.id = 'ws-canvas';
-canvas.style.cssText = `
-  position: absolute; top: 0; left: 0; z-index: 999998; pointer-events: none;
-`;
+canvas.style.cssText = `position: absolute; top: 0; left: 0; z-index: 999998; pointer-events: none;`;
 document.body.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
 let strokes = [];       
 let currentStroke = null; 
 
+// Modularized single stroke drawer
+const drawSingleStroke = (stroke) => {
+  if (stroke.points.length < 1) return;
+  ctx.beginPath();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (stroke.tool === 'pen') {
+    ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = 4;
+  } else if (stroke.tool === 'eraser-normal') {
+    ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 25;
+  }
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) { ctx.lineTo(stroke.points[i].x, stroke.points[i].y); }
+  ctx.stroke();
+};
+
+// FIXED VISUAL PARITY: Canvas now draws everything strictly from vector data on every cycle
 const redrawCanvas = () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  strokes.forEach(stroke => {
-    if (stroke.points.length < 1) return;
-    ctx.beginPath();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    
-    if (stroke.tool === 'pen') {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = 4;
-    } else if (stroke.tool === 'eraser-normal') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = 25;
-    }
-    
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) {
-      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    }
-    ctx.stroke();
-  });
+  strokes.forEach(stroke => drawSingleStroke(stroke));
+  if (currentStroke) drawSingleStroke(currentStroke);
 };
 
 const resizeCanvas = () => {
-  canvas.width = document.documentElement.scrollWidth;
-  canvas.height = document.documentElement.scrollHeight;
-  redrawCanvas(); 
+  canvas.width = document.documentElement.scrollWidth; canvas.height = document.documentElement.scrollHeight; redrawCanvas(); 
 };
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
 const updateCanvasInteractivity = () => {
-  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) {
-    canvas.style.pointerEvents = 'auto';
-  } else {
-    canvas.style.pointerEvents = 'none';
-  }
+  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) { canvas.style.pointerEvents = 'auto'; } 
+  else { canvas.style.pointerEvents = 'none'; }
 };
 
 const checkStrokeIntersection = (x, y) => {
   let wasStrokeRemoved = false;
   const detectionRadius = 16; 
-
   for (let i = strokes.length - 1; i >= 0; i--) {
     const stroke = strokes[i];
     if (stroke.tool !== 'pen') continue; 
-    
     for (let pt of stroke.points) {
-      if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) {
-        strokes.splice(i, 1); 
-        wasStrokeRemoved = true;
-        break; 
-      }
+      if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) { strokes.splice(i, 1); wasStrokeRemoved = true; break; }
     }
   }
   if (wasStrokeRemoved) redrawCanvas(); 
 };
 
 // --- DRAWING MOUSE EVENTS ---
-let isCanvasDrawing = false;
+let isDrawingCanvas = false;
 
 canvas.addEventListener('mousedown', (e) => {
   if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
-  isCanvasDrawing = true;
   
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
+    isDrawingCanvas = true;
     currentStroke = { tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
-    ctx.beginPath();
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    if (currentTool === 'pen') {
-      ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; ctx.lineWidth = 4;
-    } else {
-      ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 25;
-    }
-    ctx.moveTo(e.pageX, e.pageY);
+    redrawCanvas();
   } else if (currentTool === 'eraser-stroke') {
     checkStrokeIntersection(e.pageX, e.pageY);
   }
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  if (!isCanvasDrawing) return;
+  if (currentTool === 'eraser-stroke') {
+     if (e.buttons !== 1) return;
+     checkStrokeIntersection(e.pageX, e.pageY);
+  }
+  
+  if (!isDrawingCanvas) return;
+  
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
-    ctx.lineTo(e.pageX, e.pageY);
-    ctx.stroke();
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
     // Vector Severing for Normal Eraser
@@ -291,38 +282,26 @@ canvas.addEventListener('mousemove', (e) => {
       for (let i = strokes.length - 1; i >= 0; i--) {
         const stroke = strokes[i];
         if (stroke.tool !== 'pen') continue;
-        let newStrokes = [];
-        let currentSegment = [];
-
+        let newStrokes = []; let currentSegment = [];
         for (let j = 0; j < stroke.points.length; j++) {
           const pt = stroke.points[j];
-          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) {
-            currentSegment.push(pt);
-          } else {
-            if (currentSegment.length > 0) {
-              newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
-              currentSegment = [];
-            }
+          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) { currentSegment.push(pt); } 
+          else {
+            if (currentSegment.length > 0) { newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment }); currentSegment = []; }
           }
         }
         if (currentSegment.length > 0) newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
-        if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) {
-          strokes.splice(i, 1, ...newStrokes);
-        }
+        if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) { strokes.splice(i, 1, ...newStrokes); }
       }
     }
-  } else if (currentTool === 'eraser-stroke') {
-    checkStrokeIntersection(e.pageX, e.pageY);
-  }
+    redrawCanvas();
+  } 
 });
 
 canvas.addEventListener('mouseup', () => {
-  if (isCanvasDrawing) {
-    isCanvasDrawing = false;
-    if (currentStroke) { strokes.push(currentStroke); currentStroke = null; }
-    ctx.closePath();
-  }
+  if (isDrawingCanvas) { isDrawingCanvas = false; if (currentStroke) { strokes.push(currentStroke); currentStroke = null; } redrawCanvas(); }
 });
+
 
 // ==========================================
 // --- 8. THE DOM ENGINE (PHASE 3) ---
@@ -336,37 +315,49 @@ document.addEventListener('mouseup', () => {
       const range = selection.getRangeAt(0);
       const span = document.createElement('span');
       span.className = 'ws-highlight';
-      span.style.backgroundColor = currentColor + '66'; // Appends '66' for 40% transparency
+      span.style.backgroundColor = currentColor + '66'; 
       span.style.color = 'inherit';
-      
-      try {
-        range.surroundContents(span);
-      } catch (e) {
-        console.warn("WebScribe: Could not highlight across complex HTML tags.");
-      }
+      try { range.surroundContents(span); } catch (er) { console.warn("WebScribe: Text structure too complex to highlight."); }
       selection.removeAllRanges();
     }
   }
 });
 
+// FIXED HIGHLIGHT ERASER: Toggles canvas visibility layer to see through it to the DOM elements underneath
+const checkDomHighlightEraser = (e) => {
+    if (currentTool === 'eraser-stroke') {
+        canvas.style.pointerEvents = 'none'; // Temporarily drop canvas mask
+        const element = document.elementFromPoint(e.clientX, e.clientY);
+        canvas.style.pointerEvents = 'auto'; // Re-engage canvas mask instantly
+        
+        const highlight = element?.closest('.ws-highlight');
+        if (highlight) {
+            highlight.replaceWith(...highlight.childNodes); // Cleanly strips out wrapper span
+            console.log("WebScribe: DOM highlight erased.");
+        }
+    }
+};
+
+canvas.addEventListener('click', checkDomHighlightEraser);
+canvas.addEventListener('mousemove', (e) => {
+    if (e.buttons === 1) checkDomHighlightEraser(e); 
+});
+
+
 // --- STICKY NOTES ---
 document.addEventListener('click', (e) => {
   if (currentTool === 'note') {
-    // Prevent creating notes if you click the menu or an existing note
     if (e.target.closest('#ws-wrapper') || e.target.closest('.ws-sticky-note')) return;
 
-    // Create the note container
     const note = document.createElement('div');
     note.className = 'ws-sticky-note';
     note.style.left = e.pageX + 'px';
     note.style.top = e.pageY + 'px';
 
-    // Create the header (Drag handle)
     const header = document.createElement('div');
     header.className = 'ws-note-header';
-    header.style.backgroundColor = currentColor; // Match current chosen color!
+    header.style.backgroundColor = currentColor;
 
-    // Create the Close Button
     const closeBtn = document.createElement('div');
     closeBtn.className = 'ws-note-close';
     closeBtn.innerHTML = '✖';
@@ -374,7 +365,6 @@ document.addEventListener('click', (e) => {
 
     header.appendChild(closeBtn);
     
-    // Create the Text Area
     const textArea = document.createElement('textarea');
     textArea.className = 'ws-note-body';
     textArea.placeholder = 'Type a note...';
@@ -383,16 +373,14 @@ document.addEventListener('click', (e) => {
     note.appendChild(textArea);
     document.body.appendChild(note);
 
-    // --- NOTE DRAGGING LOGIC ---
+    // Note Dragging Mechanics
     let isDraggingNote = false;
     let nStartX, nStartY, nStartLeft, nStartTop;
 
     header.addEventListener('mousedown', (ev) => {
       isDraggingNote = true;
-      nStartX = ev.clientX;
-      nStartY = ev.clientY;
-      nStartLeft = parseInt(note.style.left || 0, 10);
-      nStartTop = parseInt(note.style.top || 0, 10);
+      nStartX = ev.clientX; nStartY = ev.clientY;
+      nStartLeft = parseInt(note.style.left || 0, 10); nStartTop = parseInt(note.style.top || 0, 10);
       ev.preventDefault();
     });
 
@@ -401,17 +389,10 @@ document.addEventListener('click', (e) => {
       note.style.left = nStartLeft + (ev.clientX - nStartX) + 'px';
       note.style.top = nStartTop + (ev.clientY - nStartY) + 'px';
     };
-
-    const stopNoteDrag = () => {
-      isDraggingNote = false;
-    };
-
+    const stopNoteDrag = () => { isDraggingNote = false; };
     document.addEventListener('mousemove', doNoteDrag);
     document.addEventListener('mouseup', stopNoteDrag);
     
-    // Automatically switch back to cursor so you don't spawn 10 notes by accident
-    currentTool = 'cursor';
-    updateActiveButton();
-    updateCanvasInteractivity();
+    currentTool = 'cursor'; updateActiveButton(); updateCanvasInteractivity();
   }
 });
