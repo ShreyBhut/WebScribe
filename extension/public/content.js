@@ -3,6 +3,7 @@ let currentTool = 'cursor';
 let currentColor = '#ffeb3b';
 let isMenuOpen = true;
 let isEraserOpen = false;
+let actionHistory = []; // The Global Action Stack for Undo
 
 // --- 2. INJECT ULTRA-MODERN BOLD CSS ---
 const style = document.createElement('style');
@@ -107,7 +108,6 @@ const createToolButton = (id, label, isTool = true) => {
       currentTool = id;
       updateActiveButton();
       updateCanvasInteractivity(); 
-      console.log("Tool active:", currentTool);
     });
   }
   return btn;
@@ -136,8 +136,42 @@ menu.appendChild(eraserMainBtn);
 menu.appendChild(eraserContainer);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
 
+// --- PHASE 4: UNDO & CLEAR ALL LOGIC ---
 const undoBtn = createToolButton('undo', '↩️ Undo', false);
+undoBtn.addEventListener('click', () => {
+  if (actionHistory.length === 0) return;
+  const lastAction = actionHistory.pop();
+
+  if (lastAction.type === 'canvas') {
+    // Restore previous canvas state
+    strokes = lastAction.previousStrokes;
+    redrawCanvas();
+  } else if (lastAction.type === 'note') {
+    // Remove the created note
+    if (document.body.contains(lastAction.element)) lastAction.element.remove();
+  } else if (lastAction.type === 'highlight') {
+    // Unwrap the highlight span
+    if (document.body.contains(lastAction.element)) {
+      lastAction.element.replaceWith(...lastAction.element.childNodes);
+    }
+  }
+});
+
 const clearBtn = createToolButton('clear-all', '🗑️ Clear all', false);
+clearBtn.addEventListener('click', () => {
+  if (confirm('Are you sure you want to clear all notes, highlights, and drawings?')) {
+    // Clear Canvas
+    strokes = [];
+    redrawCanvas();
+    // Clear DOM Notes
+    document.querySelectorAll('.ws-sticky-note').forEach(n => n.remove());
+    // Clear DOM Highlights
+    document.querySelectorAll('.ws-highlight').forEach(h => h.replaceWith(...h.childNodes));
+    // Empty History
+    actionHistory = [];
+  }
+});
+
 menu.appendChild(undoBtn);
 menu.appendChild(clearBtn);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
@@ -204,8 +238,8 @@ const ctx = canvas.getContext('2d');
 
 let strokes = [];       
 let currentStroke = null; 
+let snapshotBeforeDraw = []; // For Undo History
 
-// Modularized single stroke drawer
 const drawSingleStroke = (stroke) => {
   if (stroke.points.length < 1) return;
   ctx.beginPath();
@@ -220,7 +254,6 @@ const drawSingleStroke = (stroke) => {
   ctx.stroke();
 };
 
-// FIXED VISUAL PARITY: Canvas now draws everything strictly from vector data on every cycle
 const redrawCanvas = () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   strokes.forEach(stroke => drawSingleStroke(stroke));
@@ -256,6 +289,9 @@ let isDrawingCanvas = false;
 canvas.addEventListener('mousedown', (e) => {
   if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
   
+  // Save state for Undo BEFORE modifying it
+  snapshotBeforeDraw = JSON.parse(JSON.stringify(strokes)); 
+  
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     isDrawingCanvas = true;
     currentStroke = { tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
@@ -276,7 +312,6 @@ canvas.addEventListener('mousemove', (e) => {
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
-    // Vector Severing for Normal Eraser
     if (currentTool === 'eraser-normal') {
       const eraserRadius = 15; 
       for (let i = strokes.length - 1; i >= 0; i--) {
@@ -299,7 +334,17 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseup', () => {
-  if (isDrawingCanvas) { isDrawingCanvas = false; if (currentStroke) { strokes.push(currentStroke); currentStroke = null; } redrawCanvas(); }
+  if (isDrawingCanvas || currentTool === 'eraser-stroke') { 
+    if (isDrawingCanvas && currentStroke) { 
+      strokes.push(currentStroke); 
+      currentStroke = null; 
+    }
+    isDrawingCanvas = false; 
+    redrawCanvas();
+    
+    // Push the canvas action to the Global History!
+    actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw });
+  }
 });
 
 
@@ -317,23 +362,25 @@ document.addEventListener('mouseup', () => {
       span.className = 'ws-highlight';
       span.style.backgroundColor = currentColor + '66'; 
       span.style.color = 'inherit';
-      try { range.surroundContents(span); } catch (er) { console.warn("WebScribe: Text structure too complex to highlight."); }
+      try { 
+        range.surroundContents(span); 
+        // Push DOM action to History!
+        actionHistory.push({ type: 'highlight', element: span });
+      } catch (er) { console.warn("WebScribe: Text structure too complex to highlight."); }
       selection.removeAllRanges();
     }
   }
 });
 
-// FIXED HIGHLIGHT ERASER: Toggles canvas visibility layer to see through it to the DOM elements underneath
 const checkDomHighlightEraser = (e) => {
     if (currentTool === 'eraser-stroke') {
-        canvas.style.pointerEvents = 'none'; // Temporarily drop canvas mask
+        canvas.style.pointerEvents = 'none'; 
         const element = document.elementFromPoint(e.clientX, e.clientY);
-        canvas.style.pointerEvents = 'auto'; // Re-engage canvas mask instantly
+        canvas.style.pointerEvents = 'auto'; 
         
         const highlight = element?.closest('.ws-highlight');
         if (highlight) {
-            highlight.replaceWith(...highlight.childNodes); // Cleanly strips out wrapper span
-            console.log("WebScribe: DOM highlight erased.");
+            highlight.replaceWith(...highlight.childNodes); 
         }
     }
 };
@@ -342,7 +389,6 @@ canvas.addEventListener('click', checkDomHighlightEraser);
 canvas.addEventListener('mousemove', (e) => {
     if (e.buttons === 1) checkDomHighlightEraser(e); 
 });
-
 
 // --- STICKY NOTES ---
 document.addEventListener('click', (e) => {
@@ -373,7 +419,9 @@ document.addEventListener('click', (e) => {
     note.appendChild(textArea);
     document.body.appendChild(note);
 
-    // Note Dragging Mechanics
+    // Push Note DOM action to History!
+    actionHistory.push({ type: 'note', element: note });
+
     let isDraggingNote = false;
     let nStartX, nStartY, nStartLeft, nStartTop;
 
