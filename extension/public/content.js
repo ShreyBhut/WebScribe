@@ -86,7 +86,7 @@ const createToolButton = (id, label, isTool = true) => {
     btn.addEventListener('click', () => {
       currentTool = id;
       updateActiveButton();
-      updateCanvasInteractivity(); // Trigger Canvas Engine Update
+      updateCanvasInteractivity(); 
       console.log("Tool active:", currentTool);
     });
   }
@@ -168,83 +168,174 @@ basics.forEach(b => {
 colorSection.appendChild(colorRow);
 menu.appendChild(colorSection);
 
-// Initialize Menu
 updateActiveButton();
 document.body.appendChild(wrapper);
 
 
 // ==========================================
-// --- 7. THE CANVAS ENGINE (PHASE 2) ---
+// --- 7. THE UPGRADED CANVAS ENGINE ---
 // ==========================================
 
 const canvas = document.createElement('canvas');
 canvas.id = 'ws-canvas';
 canvas.style.cssText = `
-  position: absolute; 
-  top: 0; 
-  left: 0; 
-  z-index: 999998; /* Under the menu, over the website */
-  pointer-events: none; /* Let normal clicks pass through by default */
+  position: absolute; top: 0; left: 0; z-index: 999998; pointer-events: none;
 `;
 document.body.appendChild(canvas);
-
 const ctx = canvas.getContext('2d');
 
-// Size the canvas to cover the entire scrollable webpage
+let strokes = [];       
+let currentStroke = null; 
+
+const redrawCanvas = () => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  strokes.forEach(stroke => {
+    if (stroke.points.length < 1) return;
+    ctx.beginPath();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    if (stroke.tool === 'pen') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = 4;
+    } else if (stroke.tool === 'eraser-normal') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 25;
+    }
+    
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i++) {
+      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    ctx.stroke();
+  });
+};
+
 const resizeCanvas = () => {
   canvas.width = document.documentElement.scrollWidth;
   canvas.height = document.documentElement.scrollHeight;
+  redrawCanvas(); 
 };
 resizeCanvas();
-// If the user resizes their browser window, recalculate the canvas size
 window.addEventListener('resize', resizeCanvas);
 
-// Toggle Canvas interactivity based on the current tool
 const updateCanvasInteractivity = () => {
-  if (currentTool === 'pen' || currentTool === 'eraser-normal' || currentTool === 'eraser-stroke') {
-    canvas.style.pointerEvents = 'auto'; // Canvas intercepts mouse
+  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) {
+    canvas.style.pointerEvents = 'auto';
   } else {
-    canvas.style.pointerEvents = 'none'; // Clicks pass through to the website
+    canvas.style.pointerEvents = 'none';
   }
 };
 
-// Drawing State
+const checkStrokeIntersection = (x, y) => {
+  let wasStrokeRemoved = false;
+  const detectionRadius = 16; 
+
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const stroke = strokes[i];
+    if (stroke.tool !== 'pen') continue; 
+    
+    for (let pt of stroke.points) {
+      if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) {
+        strokes.splice(i, 1); 
+        wasStrokeRemoved = true;
+        break; 
+      }
+    }
+  }
+  if (wasStrokeRemoved) redrawCanvas(); 
+};
+
+// --- DRAWING MOUSE EVENTS ---
 let isDrawing = false;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (currentTool !== 'pen' && currentTool !== 'eraser-normal') return;
+  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
   isDrawing = true;
-  ctx.beginPath();
-  // pageX/pageY ensures we draw at the correct spot even if scrolled down
-  ctx.moveTo(e.pageX, e.pageY); 
+  
+  if (currentTool === 'pen' || currentTool === 'eraser-normal') {
+    currentStroke = {
+      tool: currentTool,
+      color: currentColor,
+      points: [{ x: e.pageX, y: e.pageY }]
+    };
+    
+    ctx.beginPath();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (currentTool === 'pen') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = 4;
+    } else {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 25;
+    }
+    ctx.moveTo(e.pageX, e.pageY);
+  } else if (currentTool === 'eraser-stroke') {
+    checkStrokeIntersection(e.pageX, e.pageY);
+  }
 });
 
 canvas.addEventListener('mousemove', (e) => {
   if (!isDrawing) return;
   
-  if (currentTool === 'pen') {
-    ctx.globalCompositeOperation = 'source-over'; // Normal drawing mode
-    ctx.strokeStyle = currentColor;
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+  if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     ctx.lineTo(e.pageX, e.pageY);
     ctx.stroke();
-  } 
-  else if (currentTool === 'eraser-normal') {
-    ctx.globalCompositeOperation = 'destination-out'; // Erasing mode (makes pixels transparent)
-    ctx.lineWidth = 25; // Much thicker for easy erasing
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineTo(e.pageX, e.pageY);
-    ctx.stroke();
+    currentStroke.points.push({ x: e.pageX, y: e.pageY });
+
+    // --- VECTOR SEVERING LOGIC FOR NORMAL ERASER ---
+    if (currentTool === 'eraser-normal') {
+      const eraserRadius = 15; // Hitbox radius of the normal eraser
+      
+      for (let i = strokes.length - 1; i >= 0; i--) {
+        const stroke = strokes[i];
+        if (stroke.tool !== 'pen') continue;
+
+        let newStrokes = [];
+        let currentSegment = [];
+
+        for (let j = 0; j < stroke.points.length; j++) {
+          const pt = stroke.points[j];
+          const distance = Math.hypot(pt.x - e.pageX, pt.y - e.pageY);
+
+          if (distance > eraserRadius) {
+            currentSegment.push(pt);
+          } else {
+            // Point erased. Cap off the current segment if it has data.
+            if (currentSegment.length > 0) {
+              newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
+              currentSegment = [];
+            }
+          }
+        }
+        
+        // Push the final segment if it has leftover data
+        if (currentSegment.length > 0) {
+          newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
+        }
+
+        // If the stroke was split into multiple segments (or completely erased), update the array
+        if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) {
+          strokes.splice(i, 1, ...newStrokes);
+        }
+      }
+    }
+  } else if (currentTool === 'eraser-stroke') {
+    checkStrokeIntersection(e.pageX, e.pageY);
   }
 });
 
 canvas.addEventListener('mouseup', () => {
   if (isDrawing) {
     isDrawing = false;
+    if (currentStroke) {
+      strokes.push(currentStroke);
+      currentStroke = null;
+    }
     ctx.closePath();
-    // (We will save this drawn path into an array in Phase 4 for Undo/Stroke Eraser)
   }
 });
