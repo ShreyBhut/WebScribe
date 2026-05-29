@@ -4,8 +4,7 @@ let currentColor = '#ffeb3b';
 let isMenuOpen = true;
 let isEraserOpen = false;
 let actionHistory = []; 
-let redoHistory = []; // New Global Stack for Redo
-let isVisible = true; 
+let redoHistory = []; 
 
 // --- 2. INJECT ULTRA-MODERN BOLD CSS ---
 const style = document.createElement('style');
@@ -51,7 +50,6 @@ style.textContent = `
     border: 3px solid #000000; box-shadow: 4px 4px 0px rgba(0,0,0,0.2); 
     border-radius: 12px; z-index: 999997; display: flex; flex-direction: column; 
     overflow: hidden; resize: both; min-width: 150px; min-height: 100px;
-    transition: opacity 0.2s;
   }
   .ws-note-header { 
     height: 28px; cursor: move; display: flex; justify-content: flex-end; 
@@ -65,7 +63,6 @@ style.textContent = `
     outline: none; box-sizing: border-box; color: #111827; flex-grow: 1; 
     resize: none !important; overflow-y: auto;
   }
-  #ws-canvas { transition: opacity 0.2s; }
 `;
 document.head.appendChild(style);
 
@@ -151,7 +148,6 @@ const createToolButton = (id, label, isTool = true) => {
   btn.innerHTML = label;
   if (isTool) {
     btn.addEventListener('click', () => {
-      if (!isVisible) visibilityBtn.click(); 
       currentTool = id;
       updateActiveButton();
       updateCanvasInteractivity(); 
@@ -183,26 +179,7 @@ menu.appendChild(eraserMainBtn);
 menu.appendChild(eraserContainer);
 menu.appendChild(document.createElement('div')).className = 'ws-divider';
 
-// --- PHASE 5/6: ACTIONS & HOTKEYS ---
-const visibilityBtn = createToolButton('toggle-visibility', '👁️ Hide All', false);
-visibilityBtn.addEventListener('click', () => {
-  isVisible = !isVisible;
-  visibilityBtn.innerHTML = isVisible ? '👁️ Hide All' : '👀 Show All';
-  
-  canvas.style.opacity = isVisible ? '1' : '0';
-  canvas.style.pointerEvents = isVisible ? (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool) ? 'auto' : 'none') : 'none';
-  
-  document.querySelectorAll('.ws-sticky-note').forEach(n => {
-    n.style.opacity = isVisible ? '1' : '0';
-    n.style.pointerEvents = isVisible ? 'auto' : 'none'; 
-  });
-  
-  document.querySelectorAll('.ws-highlight').forEach(h => {
-    h.style.backgroundColor = isVisible ? h.dataset.bgColor : 'transparent';
-  });
-});
-menu.appendChild(visibilityBtn);
-
+// --- ACTIONS & HOTKEYS ---
 const undoBtn = createToolButton('undo', '↩️ Undo (Ctrl+Z)', false);
 undoBtn.addEventListener('click', () => {
   if (actionHistory.length === 0) return;
@@ -216,7 +193,6 @@ undoBtn.addEventListener('click', () => {
   } else if (lastAction.type === 'note') {
     if (document.body.contains(lastAction.element)) lastAction.element.remove();
   } else if (lastAction.type === 'highlight') {
-    // Instead of destroying the span, just hide it so we can easily Redo it
     lastAction.element.style.backgroundColor = 'transparent';
     lastAction.element.classList.remove('ws-highlight');
   }
@@ -258,7 +234,7 @@ document.addEventListener('keydown', (e) => {
   // Ctrl+Z or Cmd+Z
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault(); 
-    if (e.shiftKey) { redoBtn.click(); } // Catch Ctrl+Shift+Z for Redo
+    if (e.shiftKey) { redoBtn.click(); } 
     else { undoBtn.click(); }
   }
   
@@ -359,7 +335,6 @@ const resizeCanvas = () => {
 resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
 const updateCanvasInteractivity = () => {
-  if (!isVisible) return; 
   if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) { canvas.style.pointerEvents = 'auto'; } 
   else { canvas.style.pointerEvents = 'none'; }
 };
@@ -381,7 +356,7 @@ const checkStrokeIntersection = (x, y) => {
 let isDrawingCanvas = false;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool) || !isVisible) return;
+  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
   
   snapshotBeforeDraw = JSON.parse(JSON.stringify(strokes)); 
   
@@ -395,8 +370,6 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  if (!isVisible) return;
-
   if (currentTool === 'eraser-stroke') {
      if (e.buttons !== 1) return;
      checkStrokeIntersection(e.pageX, e.pageY);
@@ -445,12 +418,12 @@ canvas.addEventListener('mouseup', () => {
 
 
 // ==========================================
-// --- 8. THE DOM ENGINE (PHASE 3) ---
+// --- 8. THE DOM ENGINE ---
 // ==========================================
 
 // --- HIGHLIGHTER ---
 document.addEventListener('mouseup', () => {
-  if (currentTool === 'highlighter' && isVisible) {
+  if (currentTool === 'highlighter') {
     const selection = window.getSelection();
     if (!selection.isCollapsed && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
@@ -473,7 +446,7 @@ document.addEventListener('mouseup', () => {
 });
 
 const checkDomHighlightEraser = (e) => {
-    if (currentTool === 'eraser-stroke' && isVisible) {
+    if (currentTool === 'eraser-stroke') {
         canvas.style.pointerEvents = 'none'; 
         const element = document.elementFromPoint(e.clientX, e.clientY);
         canvas.style.pointerEvents = 'auto'; 
@@ -490,7 +463,7 @@ canvas.addEventListener('mousemove', (e) => {
 
 // --- STICKY NOTES ---
 document.addEventListener('click', (e) => {
-  if (currentTool === 'note' && isVisible) {
+  if (currentTool === 'note') {
     if (e.target.closest('#ws-wrapper') || e.target.closest('.ws-sticky-note') || e.target.closest('.ws-modal-overlay')) return;
 
     const note = document.createElement('div');
@@ -551,7 +524,6 @@ const applyMasterState = (isActive) => {
   const canvas = document.getElementById('ws-canvas');
   
   if (isActive) {
-    // Turn ON: Restore layout
     if (wrapper) wrapper.style.display = 'block';
     if (canvas) canvas.style.display = 'block';
     document.querySelectorAll('.ws-sticky-note').forEach(n => n.style.display = 'flex');
@@ -559,7 +531,6 @@ const applyMasterState = (isActive) => {
       h.style.backgroundColor = h.dataset.bgColor || '#ffeb3b66';
     });
   } else {
-    // Turn OFF: Remove entirely from flow
     if (wrapper) wrapper.style.display = 'none';
     if (canvas) canvas.style.display = 'none';
     document.querySelectorAll('.ws-sticky-note').forEach(n => n.style.display = 'none');
@@ -567,16 +538,63 @@ const applyMasterState = (isActive) => {
   }
 };
 
-// 1. Listen for the toggle switch in the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'toggle_extension') {
     applyMasterState(request.isActive);
   }
 });
 
-// 2. Check the saved state immediately when a page loads
 chrome.storage.local.get(['webScribeActive'], (result) => {
   if (result.webScribeActive === false) {
     applyMasterState(false);
   }
 });
+
+// ==========================================
+// --- 10. FIREBASE AUTO-SAVE ENGINE ---
+// ==========================================
+
+const triggerAutoSave = () => {
+  // 1. Grab all strokes (already cleanly formatted in arrays)
+  const dataStrokes = strokes;
+
+  // 2. Extract DOM Notes into pure data
+  const dataNotes = [];
+  document.querySelectorAll('.ws-sticky-note').forEach(note => {
+    dataNotes.push({
+      left: note.style.left,
+      top: note.style.top,
+      color: note.querySelector('.ws-note-header').style.backgroundColor,
+      text: note.querySelector('.ws-note-body').value
+    });
+  });
+
+  // 3. Send payload to background.js
+  chrome.runtime.sendMessage({
+    action: 'auto_save',
+    data: { 
+      strokes: dataStrokes, 
+      notes: dataNotes 
+    }
+  });
+};
+
+// --- BIND TRIGGERS ---
+// Listen for canvas drawing completion
+canvas.addEventListener('mouseup', () => {
+  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) {
+    triggerAutoSave();
+  }
+});
+
+// Listen for note typing completion (triggers when you click outside the textarea)
+document.addEventListener('focusout', (e) => {
+  if (e.target.classList.contains('ws-note-body')) {
+    triggerAutoSave();
+  }
+});
+
+// Bind to Undo/Redo/Clear Actions
+undoBtn.addEventListener('click', triggerAutoSave);
+redoBtn.addEventListener('click', triggerAutoSave);
+document.getElementById('ws-confirm-clear').addEventListener('click', triggerAutoSave);

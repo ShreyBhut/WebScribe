@@ -34,7 +34,7 @@ function App() {
       <h2 className="popup-title">✏️ WebScribe</h2>
       
       <div className="toggle-wrapper">
-        <span className="toggle-label">{isActive ? 'Active' : 'Disabled'}</span>
+        <span className="toggle-label">{isActive ? 'ON' : 'OFF'}</span>
         <label className="switch">
           <input type="checkbox" checked={isActive} onChange={toggleSwitch} />
           <span className="slider round"></span>
