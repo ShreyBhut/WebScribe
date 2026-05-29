@@ -542,3 +542,41 @@ document.addEventListener('click', (e) => {
     currentTool = 'cursor'; updateActiveButton(); updateCanvasInteractivity();
   }
 });
+
+// ==========================================
+// --- 9. MASTER KILL SWITCH (POPUP LISTENER) ---
+// ==========================================
+const applyMasterState = (isActive) => {
+  const wrapper = document.getElementById('ws-wrapper');
+  const canvas = document.getElementById('ws-canvas');
+  
+  if (isActive) {
+    // Turn ON: Restore layout
+    if (wrapper) wrapper.style.display = 'block';
+    if (canvas) canvas.style.display = 'block';
+    document.querySelectorAll('.ws-sticky-note').forEach(n => n.style.display = 'flex');
+    document.querySelectorAll('.ws-highlight').forEach(h => {
+      h.style.backgroundColor = h.dataset.bgColor || '#ffeb3b66';
+    });
+  } else {
+    // Turn OFF: Remove entirely from flow
+    if (wrapper) wrapper.style.display = 'none';
+    if (canvas) canvas.style.display = 'none';
+    document.querySelectorAll('.ws-sticky-note').forEach(n => n.style.display = 'none');
+    document.querySelectorAll('.ws-highlight').forEach(h => h.style.backgroundColor = 'transparent');
+  }
+};
+
+// 1. Listen for the toggle switch in the popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'toggle_extension') {
+    applyMasterState(request.isActive);
+  }
+});
+
+// 2. Check the saved state immediately when a page loads
+chrome.storage.local.get(['webScribeActive'], (result) => {
+  if (result.webScribeActive === false) {
+    applyMasterState(false);
+  }
+});
