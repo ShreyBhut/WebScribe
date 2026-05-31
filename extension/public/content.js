@@ -3,8 +3,8 @@ let currentTool = 'cursor';
 let currentColor = '#ff6b00';
 let isMenuOpen = true;
 let isEraserOpen = false;
-let actionHistory = []; 
-let redoHistory = []; 
+let actionHistory = [];
+let redoHistory = [];
 
 // --- 2. INJECT ULTRA-MODERN BOLD CSS ---
 const style = document.createElement('style');
@@ -12,18 +12,62 @@ style.textContent = `
   #ws-wrapper { position: fixed; top: 15px; right: 15px; z-index: 999999; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
   .ws-main-toggle { background: #000000; border: 3px solid #000000; border-radius: 30px; padding: 8px 14px; cursor: move; font-weight: bold; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #ffffff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: transform 0.1s, background-color 0.2s; }
   .ws-main-toggle:hover { background: #18181b; border-color: #ff6b00; }
-  #ws-menu { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); border: 3px solid #000000; border-radius: 14px; padding: 6px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 125px; transition: opacity 0.2s; }
+  #ws-menu { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); border: 3px solid #000000; border-radius: 14px; padding: 6px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 125px; transition: opacity 0.2s; }
   .ws-menu-hidden { display: none !important; }
-  .ws-btn { background: transparent; border: none; padding: 6px 8px; text-align: left; cursor: pointer; border-radius: 6px; font-size: 12px; color: #111827; display: flex; align-items: center; gap: 6px; font-weight: bold; transition: background 0.2s; width: 100%; }
+  .ws-btn { background: transparent; border: none; padding: 4px 8px; text-align: left; cursor: pointer; border-radius: 6px; font-size: 12px; color: #111827; display: flex; align-items: center; gap: 6px; font-weight: bold; transition: background 0.2s, transform 0.1s; width: 100%; }
   .ws-btn:hover { background: #f3f4f6; }
-  .ws-btn.ws-active { background: #ff6b00; color: #ffffff; }
-  .ws-eraser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #000000; margin-left: 8px; }
-  .ws-eraser-container.ws-show { display: flex; }
-  .ws-shape-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #ff6b00; margin-left: 8px; }
-  .ws-shape-container.ws-show { display: flex; }
-  .ws-laser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #ff2222; margin-left: 8px; }
-  .ws-laser-container.ws-show { display: flex; }
-  .ws-divider { height: 2px; background: #000000; margin: 4px 0; }
+  .ws-btn.ws-active { background: #ff6b00; color: #ffffff; box-shadow: 0 2px 6px rgba(255, 107, 0, 0.4); }
+
+  /* Sub-menu Collapsible Dropdown Containers - Opens below inside the menu itself */
+  .ws-eraser-container, .ws-shape-container, .ws-laser-container {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    margin: 1px 4px;
+    padding: 2px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .ws-eraser-container.ws-show, .ws-shape-container.ws-show, .ws-laser-container.ws-show {
+    display: flex;
+    animation: wsFadeSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* Keyframe animations for slide/fade of sub-menus */
+  @keyframes wsFadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scaleY(0.95);
+      max-height: 0;
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+      max-height: 150px;
+    }
+  }
+
+  /* Premium interactive styling and micro-animations for sub-buttons */
+  .ws-eraser-container .ws-btn, .ws-shape-container .ws-btn, .ws-laser-container .ws-btn {
+    font-size: 11.5px;
+    padding: 3px 6px;
+    border-radius: 5px;
+    transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+  }
+  .ws-eraser-container .ws-btn:hover, .ws-shape-container .ws-btn:hover, .ws-laser-container .ws-btn:hover {
+    transform: translateX(3px);
+    background: rgba(0, 0, 0, 0.05);
+  }
+  .ws-eraser-container .ws-btn.ws-active, .ws-shape-container .ws-btn.ws-active, .ws-laser-container .ws-btn.ws-active {
+    transform: translateX(3px);
+    background: #ff6b00;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(255, 107, 0, 0.3);
+  }
+  .ws-divider { height: 2px; background: #000000; margin: 2px 0; }
   .ws-laser-cursor { cursor: crosshair !important; }
   .ws-color-section { display: flex; flex-direction: column; gap: 6px; padding: 4px; font-size: 12px; font-weight: bold; color: #111827; }
   .ws-custom-row { display: flex; align-items: center; justify-content: space-between; }
@@ -170,7 +214,7 @@ const createToolButton = (id, label, isTool = true) => {
     btn.addEventListener('click', () => {
       currentTool = id;
       updateActiveButton();
-      updateCanvasInteractivity(); 
+      updateCanvasInteractivity();
     });
   }
   return btn;
@@ -217,9 +261,9 @@ const shapeMainBtn = createToolButton('shape-toggle', '⬡ Shapes', false);
 const shapeContainer = document.createElement('div');
 shapeContainer.className = 'ws-shape-container';
 
-const shapeRect  = createToolButton('shape-rect',   '▭ Rectangle');
+const shapeRect = createToolButton('shape-rect', '▭ Rectangle');
 const shapeCircle = createToolButton('shape-circle', '○ Circle');
-const shapeArrow  = createToolButton('shape-arrow',  '↗ Arrow');
+const shapeArrow = createToolButton('shape-arrow', '↗ Arrow');
 shapeContainer.appendChild(shapeRect);
 shapeContainer.appendChild(shapeCircle);
 shapeContainer.appendChild(shapeArrow);
@@ -256,7 +300,7 @@ const undoBtn = createToolButton('undo', '↩️ Undo (Ctrl+Z)', false);
 undoBtn.addEventListener('click', () => {
   if (actionHistory.length === 0) return;
   const lastAction = actionHistory.pop();
-  
+
   redoHistory.push(lastAction); // Save to Redo stack
 
   if (lastAction.type === 'canvas') {
@@ -274,7 +318,7 @@ const redoBtn = createToolButton('redo', '🔁 Redo (Ctrl+Y)', false);
 redoBtn.addEventListener('click', () => {
   if (redoHistory.length === 0) return;
   const actionToRestore = redoHistory.pop();
-  
+
   actionHistory.push(actionToRestore); // Push back to Undo stack
 
   if (actionToRestore.type === 'canvas') {
@@ -305,11 +349,11 @@ document.addEventListener('keydown', (e) => {
 
   // Ctrl+Z or Cmd+Z
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-    e.preventDefault(); 
-    if (e.shiftKey) { redoBtn.click(); } 
+    e.preventDefault();
+    if (e.shiftKey) { redoBtn.click(); }
     else { undoBtn.click(); }
   }
-  
+
   // Ctrl+Y or Cmd+Y
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
     e.preventDefault();
@@ -339,7 +383,7 @@ colorSection.appendChild(customRow);
 const colorRow = document.createElement('div');
 colorRow.className = 'ws-color-row';
 
-const basics = [ { hex: '#ff6b00' }, { hex: '#ef4444' }, { hex: '#22c55e' }, { hex: '#3b82f6' }, { hex: '#000000' } ];
+const basics = [{ hex: '#ff6b00' }, { hex: '#ef4444' }, { hex: '#22c55e' }, { hex: '#3b82f6' }, { hex: '#000000' }];
 
 const updateActiveColor = () => {
   document.querySelectorAll('.ws-color-swatch').forEach(swatch => {
@@ -377,9 +421,9 @@ canvas.style.cssText = `position: absolute; top: 0; left: 0; z-index: 999998; po
 document.body.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
-let strokes = [];       
-let currentStroke = null; 
-let snapshotBeforeDraw = []; 
+let strokes = [];
+let currentStroke = null;
+let snapshotBeforeDraw = [];
 
 // --- SHAPE PREVIEW STATE ---
 let isDrawingShape = false;
@@ -443,31 +487,38 @@ const drawShape = (stroke, alpha) => {
 };
 
 // --- LASER PREMIUM RENDERING HELPERS ---
-const getNeonColor = (hex) => {
+const getLaserColors = (hex) => {
   const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
   const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
-  if (!result) return '#FF073A'; // Neon Red default
-  
+  if (!result) return { glow: '#FF073A', core: '#FFFFFF' }; // Neon Red default
+
   const r = parseInt(result[1], 16);
   const g = parseInt(result[2], 16);
   const b = parseInt(result[3], 16);
-  
-  if (r > g && r > b) {
-    if (g > 80) return '#FF5F00'; // Neon Orange
-    return '#FF073A'; // Neon Red
-  } else if (g > r && g > b) {
-    return '#00FF66'; // Neon Green
-  } else if (b > r && b > g) {
-    return '#00F0FF'; // Neon Blue
-  } else {
-    return '#FF073A'; // Default to Neon Red
+
+  // If color is black or extremely dark
+  if (r < 50 && g < 50 && b < 50) {
+    return { glow: '#555555', core: '#000000' };
   }
+
+  let glowColor = '#FF073A';
+  if (r > g && r > b) {
+    if (g > 80) glowColor = '#FF5F00'; // Neon Orange
+    else glowColor = '#FF073A'; // Neon Red
+  } else if (g > r && g > b) {
+    glowColor = '#00FF66'; // Neon Green
+  } else if (b > r && b > g) {
+    glowColor = '#00F0FF'; // Neon Blue
+  } else {
+    glowColor = '#FF073A'; // Default to Neon Red
+  }
+  return { glow: glowColor, core: '#FFFFFF' };
 };
 
 const drawLaserStroke = (stroke, alpha) => {
   if (stroke.points.length < 1) return;
-  const neonColor = getNeonColor(stroke.color);
+  const { glow: glowColor, core: coreColor } = getLaserColors(stroke.color);
   const strokeAlpha = alpha !== undefined ? alpha : 1;
 
   ctx.save();
@@ -477,12 +528,12 @@ const drawLaserStroke = (stroke, alpha) => {
 
   // --- LAYER 2 & 3: Neon Glow + Soft Drop-Off Blur ---
   ctx.beginPath();
-  ctx.strokeStyle = neonColor;
+  ctx.strokeStyle = glowColor;
   ctx.lineWidth = 10;
-  ctx.shadowColor = neonColor;
+  ctx.shadowColor = glowColor;
   ctx.shadowBlur = 12;
   ctx.globalAlpha = strokeAlpha;
-  
+
   ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
   for (let i = 1; i < stroke.points.length; i++) {
     ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
@@ -490,16 +541,16 @@ const drawLaserStroke = (stroke, alpha) => {
   ctx.stroke();
   ctx.restore();
 
-  // --- LAYER 1: The Inner Core (Bright White) ---
+  // --- LAYER 1: The Inner Core (Bright White or Black) ---
   ctx.save();
   ctx.beginPath();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.globalCompositeOperation = 'source-over';
-  ctx.strokeStyle = '#FFFFFF';
+  ctx.strokeStyle = coreColor;
   ctx.lineWidth = 3.5;
   ctx.globalAlpha = strokeAlpha;
-  
+
   ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
   for (let i = 1; i < stroke.points.length; i++) {
     ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
@@ -509,26 +560,26 @@ const drawLaserStroke = (stroke, alpha) => {
 };
 
 const drawLaserDot = (x, y) => {
-  const neonColor = getNeonColor(currentColor);
-  
+  const { glow: glowColor, core: coreColor } = getLaserColors(currentColor);
+
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
-  
+
   // Layer 3 (Soft Drop-Off) & Layer 2 (Neon Glow)
-  ctx.shadowColor = neonColor;
+  ctx.shadowColor = glowColor;
   ctx.shadowBlur = 12;
-  ctx.fillStyle = neonColor;
+  ctx.fillStyle = glowColor;
   ctx.beginPath();
   ctx.arc(x, y, 7, 0, Math.PI * 2);
   ctx.fill();
-  
-  // Layer 1: Inner Core (Bright White)
+
+  // Layer 1: Inner Core (Bright White or Black)
   ctx.shadowBlur = 0;
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = coreColor;
   ctx.beginPath();
   ctx.arc(x, y, 3, 0, Math.PI * 2);
   ctx.fill();
-  
+
   ctx.restore();
 };
 
@@ -565,7 +616,7 @@ const redrawCanvas = () => {
   if (currentStroke) drawSingleStroke(currentStroke);
   // Draw live laser strokes (fade handled by laserLoop)
   laserStrokes.forEach(ls => drawSingleStroke(ls, ls.opacity));
-  
+
   // Draw active laser dot in Dot Mode
   if (currentTool === 'laser-dot' && laserDotPos) {
     drawLaserDot(laserDotPos.x, laserDotPos.y);
@@ -573,7 +624,7 @@ const redrawCanvas = () => {
 };
 
 const resizeCanvas = () => {
-  canvas.width = document.documentElement.scrollWidth; canvas.height = document.documentElement.scrollHeight; redrawCanvas(); 
+  canvas.width = document.documentElement.scrollWidth; canvas.height = document.documentElement.scrollHeight; redrawCanvas();
 };
 resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
@@ -594,15 +645,15 @@ const updateCanvasInteractivity = () => {
 
 const checkStrokeIntersection = (x, y) => {
   let wasStrokeRemoved = false;
-  const detectionRadius = 16; 
+  const detectionRadius = 16;
   for (let i = strokes.length - 1; i >= 0; i--) {
     const stroke = strokes[i];
-    if (stroke.tool !== 'pen') continue; 
+    if (stroke.tool !== 'pen') continue;
     for (let pt of stroke.points) {
       if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) { strokes.splice(i, 1); wasStrokeRemoved = true; break; }
     }
   }
-  if (wasStrokeRemoved) redrawCanvas(); 
+  if (wasStrokeRemoved) redrawCanvas();
 };
 
 // ==========================================
@@ -613,7 +664,7 @@ const LASER_DURATION = 1500; // ms until fully faded (1.5 seconds)
 const laserLoop = () => {
   const now = Date.now();
   let anyAlive = false;
-  
+
   // If user is actively holding down mouse/stylus to draw a trail, prevent fading of existing lines
   const isCurrentlyDrawingLaser = isDrawingCanvas && (currentTool === 'laser-trail' || currentTool === 'laser');
   if (isCurrentlyDrawingLaser) {
@@ -652,7 +703,7 @@ canvas.addEventListener('mousedown', (e) => {
 
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     isDrawingCanvas = true;
-    currentStroke = { tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
+    currentStroke = { id: 's_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9), tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
     redrawCanvas();
   } else if (currentTool === 'laser-dot') {
     isDrawingCanvas = true;
@@ -669,7 +720,7 @@ canvas.addEventListener('mousedown', (e) => {
   } else if (SHAPE_TOOLS.includes(currentTool)) {
     isDrawingShape = true;
     shapeStart = { x: e.pageX, y: e.pageY };
-    currentStroke = { tool: currentTool, color: currentColor, start: shapeStart, end: { ...shapeStart } };
+    currentStroke = { id: 's_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9), tool: currentTool, color: currentColor, start: shapeStart, end: { ...shapeStart } };
   } else if (currentTool === 'eraser-stroke') {
     checkStrokeIntersection(e.pageX, e.pageY);
   }
@@ -677,8 +728,8 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mousemove', (e) => {
   if (currentTool === 'eraser-stroke') {
-     if (e.buttons !== 1) return;
-     checkStrokeIntersection(e.pageX, e.pageY);
+    if (e.buttons !== 1) return;
+    checkStrokeIntersection(e.pageX, e.pageY);
   }
 
   // Handle dot pointer tracking (dot acts as the cursor)
@@ -694,19 +745,34 @@ canvas.addEventListener('mousemove', (e) => {
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
     if (currentTool === 'eraser-normal') {
-      const eraserRadius = 15; 
+      const eraserRadius = 15;
       for (let i = strokes.length - 1; i >= 0; i--) {
         const stroke = strokes[i];
         if (stroke.tool !== 'pen') continue;
         let newStrokes = []; let currentSegment = [];
         for (let j = 0; j < stroke.points.length; j++) {
           const pt = stroke.points[j];
-          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) { currentSegment.push(pt); } 
+          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) { currentSegment.push(pt); }
           else {
-            if (currentSegment.length > 0) { newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment }); currentSegment = []; }
+            if (currentSegment.length > 0) {
+              newStrokes.push({
+                id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+                tool: 'pen',
+                color: stroke.color,
+                points: currentSegment
+              });
+              currentSegment = [];
+            }
           }
         }
-        if (currentSegment.length > 0) newStrokes.push({ tool: 'pen', color: stroke.color, points: currentSegment });
+        if (currentSegment.length > 0) {
+          newStrokes.push({
+            id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+            tool: 'pen',
+            color: stroke.color,
+            points: currentSegment
+          });
+        }
         if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) { strokes.splice(i, 1, ...newStrokes); }
       }
     }
@@ -755,14 +821,14 @@ canvas.addEventListener('mouseup', () => {
     return;
   }
 
-  if (isDrawingCanvas || currentTool === 'eraser-stroke') { 
-    if (isDrawingCanvas && currentStroke) { 
-      strokes.push(currentStroke); 
-      currentStroke = null; 
+  if (isDrawingCanvas || currentTool === 'eraser-stroke') {
+    if (isDrawingCanvas && currentStroke) {
+      strokes.push(currentStroke);
+      currentStroke = null;
     }
-    isDrawingCanvas = false; 
+    isDrawingCanvas = false;
     redrawCanvas();
-    
+
     // Save current strokes state alongside previous state for Redo logic
     actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw, currentStrokes: JSON.parse(JSON.stringify(strokes)) });
     redoHistory = []; // Wipe redo stack when a new action is performed
@@ -926,14 +992,14 @@ document.addEventListener('mouseup', () => {
       const range = selection.getRangeAt(0);
       const span = document.createElement('span');
       span.className = 'ws-highlight';
-      
+
       const highlightColor = currentColor + '66';
       span.dataset.bgColor = highlightColor;
-      span.style.backgroundColor = highlightColor; 
+      span.style.backgroundColor = highlightColor;
       span.style.color = 'inherit';
-      
-      try { 
-        range.surroundContents(span); 
+
+      try {
+        range.surroundContents(span);
         actionHistory.push({ type: 'highlight', element: span });
         redoHistory = []; // Wipe redo stack when a new action is performed
         triggerAutoSave();
@@ -944,22 +1010,22 @@ document.addEventListener('mouseup', () => {
 });
 
 const checkDomHighlightEraser = (e) => {
-    if (currentTool === 'eraser-stroke') {
-        canvas.style.pointerEvents = 'none'; 
-        const element = document.elementFromPoint(e.clientX, e.clientY);
-        canvas.style.pointerEvents = 'auto'; 
-        
-        const highlight = element?.closest('.ws-highlight');
-        if (highlight) { 
-            highlight.replaceWith(...highlight.childNodes); 
-            triggerAutoSave();
-        }
+  if (currentTool === 'eraser-stroke') {
+    canvas.style.pointerEvents = 'none';
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    canvas.style.pointerEvents = 'auto';
+
+    const highlight = element?.closest('.ws-highlight');
+    if (highlight) {
+      highlight.replaceWith(...highlight.childNodes);
+      triggerAutoSave();
     }
+  }
 };
 
 canvas.addEventListener('click', checkDomHighlightEraser);
 canvas.addEventListener('mousemove', (e) => {
-    if (e.buttons === 1) checkDomHighlightEraser(e); 
+  if (e.buttons === 1) checkDomHighlightEraser(e);
 });
 
 // --- STICKY NOTES ---
@@ -979,14 +1045,17 @@ document.addEventListener('click', (e) => {
     const closeBtn = document.createElement('div');
     closeBtn.className = 'ws-note-close';
     closeBtn.innerHTML = '✖';
-    closeBtn.addEventListener('click', () => note.remove());
+    closeBtn.addEventListener('click', () => {
+      note.remove();
+      triggerAutoSave();
+    });
 
     header.appendChild(closeBtn);
-    
+
     const textArea = document.createElement('textarea');
     textArea.className = 'ws-note-body';
     textArea.placeholder = 'Type a note...';
-    
+
     note.appendChild(header);
     note.appendChild(textArea);
     document.body.appendChild(note);
@@ -1012,7 +1081,7 @@ document.addEventListener('click', (e) => {
     const stopNoteDrag = () => { isDraggingNote = false; };
     document.addEventListener('mousemove', doNoteDrag);
     document.addEventListener('mouseup', stopNoteDrag);
-    
+
     currentTool = 'cursor'; updateActiveButton(); updateCanvasInteractivity();
   }
 });
@@ -1023,7 +1092,7 @@ document.addEventListener('click', (e) => {
 const applyMasterState = (isActive) => {
   const wrapper = document.getElementById('ws-wrapper');
   const canvas = document.getElementById('ws-canvas');
-  
+
   if (isActive) {
     if (wrapper) wrapper.style.display = 'block';
     if (canvas) canvas.style.display = 'block';
@@ -1082,7 +1151,7 @@ const triggerAutoSave = () => {
       }
     };
     findTextNodes(span);
-    
+
     if (textNodes.length > 0) {
       let ancestor = span.parentNode;
       while (ancestor && ancestor.classList && ancestor.classList.contains('ws-highlight')) {
@@ -1109,8 +1178,8 @@ const triggerAutoSave = () => {
   // 4. Send payload to background.js
   chrome.runtime.sendMessage({
     action: 'auto_save',
-    data: { 
-      strokes: dataStrokes, 
+    data: {
+      strokes: dataStrokes,
       notes: dataNotes,
       highlights: dataHighlights,
       title: document.title || window.location.hostname,
@@ -1152,11 +1221,11 @@ const loadSavedData = () => {
       // 1. Restore Canvas Strokes
       if (savedData.strokes && savedData.strokes.length > 0) {
         // Overwrite the local strokes array with the saved ones
-        strokes = savedData.strokes; 
-        
+        strokes = savedData.strokes;
+
         // Call your existing function that redraws the canvas
         // (Assuming your redraw function is called redrawCanvas. Change this if yours is named differently!)
-        redrawCanvas(); 
+        redrawCanvas();
       }
 
       // 2. Restore Sticky Notes
@@ -1168,7 +1237,7 @@ const loadSavedData = () => {
           noteEl.style.position = 'absolute';
           noteEl.style.left = noteData.left;
           noteEl.style.top = noteData.top;
-          
+
           noteEl.innerHTML = `
             <div class="ws-note-header" style="background-color: ${noteData.color};">
               <span class="ws-close-btn">&times;</span>

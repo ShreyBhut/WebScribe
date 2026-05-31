@@ -42,7 +42,19 @@ function App() {
         }
 
         // Check if there are any actual annotations
-        const strokesCount = data.strokes?.length || 0;
+        let strokesCount = 0;
+        if (data.strokes) {
+          const uniqueIds = new Set();
+          let legacyCount = 0;
+          data.strokes.forEach((stroke) => {
+            if (stroke.id) {
+              uniqueIds.add(stroke.id);
+            } else {
+              legacyCount++;
+            }
+          });
+          strokesCount = uniqueIds.size + legacyCount;
+        }
         const notesCount = data.notes?.length || 0;
         const highlightsCount = data.highlights?.length || 0;
 
