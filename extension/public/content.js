@@ -1,6 +1,6 @@
 // --- 1. STATE MANAGEMENT ---
 let currentTool = 'cursor';
-let currentColor = '#ffeb3b';
+let currentColor = '#ff6b00';
 let isMenuOpen = true;
 let isEraserOpen = false;
 let actionHistory = []; 
@@ -11,12 +11,12 @@ const style = document.createElement('style');
 style.textContent = `
   #ws-wrapper { position: fixed; top: 15px; right: 15px; z-index: 999999; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
   .ws-main-toggle { background: #000000; border: 3px solid #000000; border-radius: 30px; padding: 8px 14px; cursor: move; font-weight: bold; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #ffffff; display: flex; align-items: center; justify-content: center; gap: 6px; transition: transform 0.1s, background-color 0.2s; }
-  .ws-main-toggle:hover { background: #222222; }
+  .ws-main-toggle:hover { background: #18181b; border-color: #ff6b00; }
   #ws-menu { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); border: 3px solid #000000; border-radius: 14px; padding: 6px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 125px; transition: opacity 0.2s; }
   .ws-menu-hidden { display: none !important; }
   .ws-btn { background: transparent; border: none; padding: 6px 8px; text-align: left; cursor: pointer; border-radius: 6px; font-size: 12px; color: #111827; display: flex; align-items: center; gap: 6px; font-weight: bold; transition: background 0.2s; width: 100%; }
   .ws-btn:hover { background: #f3f4f6; }
-  .ws-btn.ws-active { background: #000000; color: #ffffff; }
+  .ws-btn.ws-active { background: #ff6b00; color: #ffffff; }
   .ws-eraser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #000000; margin-left: 8px; }
   .ws-eraser-container.ws-show { display: flex; }
   .ws-divider { height: 2px; background: #000000; margin: 4px 0; }
@@ -25,7 +25,7 @@ style.textContent = `
   .ws-color-row { display: flex; gap: 6px; justify-content: space-between; margin-top: 2px; }
   .ws-color-swatch { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s; }
   .ws-color-swatch:hover { transform: scale(1.2); }
-  .ws-color-swatch.ws-active-color { border-color: #000000; transform: scale(1.2); }
+  .ws-color-swatch.ws-active-color { border-color: #ff6b00; transform: scale(1.2); }
   .ws-color-picker { width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; cursor: pointer; background: transparent; }
   .ws-color-picker::-webkit-color-swatch { border-radius: 50%; border: 2px solid #000000; }
   
@@ -40,8 +40,8 @@ style.textContent = `
   .ws-modal-btn { padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; border: 2px solid #000000; transition: all 0.1s; }
   .ws-btn-cancel { background: #ffffff; color: #000000; }
   .ws-btn-cancel:hover { background: #f3f4f6; }
-  .ws-btn-confirm { background: #ef4444; color: #ffffff; }
-  .ws-btn-confirm:hover { background: #dc2626; box-shadow: 2px 2px 0 #000000; transform: translate(-2px, -2px); }
+  .ws-btn-confirm { background: #ff6b00; color: #ffffff; border-color: #ff6b00; }
+  .ws-btn-confirm:hover { background: #e05e00; border-color: #e05e00; box-shadow: 2px 2px 0 #000000; transform: translate(-2px, -2px); }
 
   /* --- DOM STYLES --- */
   .ws-highlight { border-radius: 3px; padding: 0 2px; transition: background 0.2s; }
@@ -267,7 +267,7 @@ colorSection.appendChild(customRow);
 const colorRow = document.createElement('div');
 colorRow.className = 'ws-color-row';
 
-const basics = [ { hex: '#ef4444' }, { hex: '#22c55e' }, { hex: '#eab308' }, { hex: '#3b82f6' } ];
+const basics = [ { hex: '#ff6b00' }, { hex: '#ef4444' }, { hex: '#22c55e' }, { hex: '#3b82f6' }, { hex: '#000000' } ];
 
 const updateActiveColor = () => {
   document.querySelectorAll('.ws-color-swatch').forEach(swatch => {
@@ -421,6 +421,118 @@ canvas.addEventListener('mouseup', () => {
 // --- 8. THE DOM ENGINE ---
 // ==========================================
 
+// --- HIGHLIGHT SERIALIZATION & RESTORATION UTILITIES ---
+const getTextOffset = (ancestor, node, offset) => {
+  let charCount = 0;
+  let found = false;
+
+  const traverse = (current) => {
+    if (found) return;
+    if (current === node) {
+      charCount += offset;
+      found = true;
+      return;
+    }
+    if (current.nodeType === Node.TEXT_NODE) {
+      charCount += current.textContent.length;
+    } else {
+      for (let child of current.childNodes) {
+        traverse(child);
+        if (found) return;
+      }
+    }
+  };
+
+  traverse(ancestor);
+  return found ? charCount : -1;
+};
+
+const getNodeAndOffsetAt = (ancestor, targetOffset) => {
+  let charCount = 0;
+  let result = null;
+
+  const traverse = (current) => {
+    if (result) return;
+    if (current.nodeType === Node.TEXT_NODE) {
+      const len = current.textContent.length;
+      if (charCount + len > targetOffset) {
+        result = { node: current, offset: targetOffset - charCount };
+        return;
+      }
+      charCount += len;
+    } else {
+      for (let child of current.childNodes) {
+        traverse(child);
+        if (result) return;
+      }
+    }
+  };
+
+  traverse(ancestor);
+
+  if (!result && charCount === targetOffset) {
+    let lastTextNode = null;
+    const findLastText = (current) => {
+      if (current.nodeType === Node.TEXT_NODE) {
+        lastTextNode = current;
+      } else {
+        for (let i = current.childNodes.length - 1; i >= 0; i--) {
+          findLastText(current.childNodes[i]);
+          if (lastTextNode) return;
+        }
+      }
+    };
+    findLastText(ancestor);
+    if (lastTextNode) {
+      result = { node: lastTextNode, offset: lastTextNode.textContent.length };
+    }
+  }
+  return result;
+};
+
+const getUniqueSelector = (el) => {
+  const path = [];
+  while (el && el.nodeType === Node.ELEMENT_NODE) {
+    if (el.classList.contains('ws-highlight')) {
+      el = el.parentNode;
+      continue;
+    }
+    if (el.id) {
+      path.unshift('#' + CSS.escape(el.id));
+      break;
+    }
+    let tag = el.nodeName.toLowerCase();
+    let sibling = el;
+    let nth = 1;
+    while (sibling = sibling.previousElementSibling) {
+      if (sibling.classList.contains('ws-highlight')) {
+        continue;
+      }
+      if (sibling.nodeName.toLowerCase() === tag) {
+        nth++;
+      }
+    }
+    path.unshift(`${tag}:nth-of-type(${nth})`);
+    el = el.parentNode;
+  }
+  return path.join(' > ');
+};
+
+const deserializeRange = (serialized) => {
+  const ancestor = document.querySelector(serialized.selector);
+  if (!ancestor) return null;
+
+  const startInfo = getNodeAndOffsetAt(ancestor, serialized.startOffset);
+  const endInfo = getNodeAndOffsetAt(ancestor, serialized.endOffset);
+
+  if (!startInfo || !endInfo) return null;
+
+  const range = document.createRange();
+  range.setStart(startInfo.node, startInfo.offset);
+  range.setEnd(endInfo.node, endInfo.offset);
+  return range;
+};
+
 // --- HIGHLIGHTER ---
 document.addEventListener('mouseup', () => {
   if (currentTool === 'highlighter') {
@@ -439,6 +551,7 @@ document.addEventListener('mouseup', () => {
         range.surroundContents(span); 
         actionHistory.push({ type: 'highlight', element: span });
         redoHistory = []; // Wipe redo stack when a new action is performed
+        triggerAutoSave();
       } catch (er) { console.warn("WebScribe: Text structure too complex to highlight."); }
       selection.removeAllRanges();
     }
@@ -452,7 +565,10 @@ const checkDomHighlightEraser = (e) => {
         canvas.style.pointerEvents = 'auto'; 
         
         const highlight = element?.closest('.ws-highlight');
-        if (highlight) { highlight.replaceWith(...highlight.childNodes); }
+        if (highlight) { 
+            highlight.replaceWith(...highlight.childNodes); 
+            triggerAutoSave();
+        }
     }
 };
 
@@ -528,7 +644,7 @@ const applyMasterState = (isActive) => {
     if (canvas) canvas.style.display = 'block';
     document.querySelectorAll('.ws-sticky-note').forEach(n => n.style.display = 'flex');
     document.querySelectorAll('.ws-highlight').forEach(h => {
-      h.style.backgroundColor = h.dataset.bgColor || '#ffeb3b66';
+      h.style.backgroundColor = h.dataset.bgColor || '#ff6b0066';
     });
   } else {
     if (wrapper) wrapper.style.display = 'none';
@@ -569,12 +685,51 @@ const triggerAutoSave = () => {
     });
   });
 
-  // 3. Send payload to background.js
+  // 3. Extract DOM Highlights into pure data
+  const dataHighlights = [];
+  document.querySelectorAll('.ws-highlight').forEach(span => {
+    const textNodes = [];
+    const findTextNodes = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        textNodes.push(node);
+      } else {
+        node.childNodes.forEach(findTextNodes);
+      }
+    };
+    findTextNodes(span);
+    
+    if (textNodes.length > 0) {
+      let ancestor = span.parentNode;
+      while (ancestor && ancestor.classList && ancestor.classList.contains('ws-highlight')) {
+        ancestor = ancestor.parentNode;
+      }
+      if (!ancestor) return;
+
+      const firstText = textNodes[0];
+      const lastText = textNodes[textNodes.length - 1];
+      const startOffset = getTextOffset(ancestor, firstText, 0);
+      const endOffset = getTextOffset(ancestor, lastText, lastText.textContent.length);
+      const selector = getUniqueSelector(ancestor);
+
+      dataHighlights.push({
+        selector: selector,
+        startOffset: startOffset,
+        endOffset: endOffset,
+        color: span.dataset.bgColor || span.style.backgroundColor || currentColor + '66',
+        text: span.textContent
+      });
+    }
+  });
+
+  // 4. Send payload to background.js
   chrome.runtime.sendMessage({
     action: 'auto_save',
     data: { 
       strokes: dataStrokes, 
-      notes: dataNotes 
+      notes: dataNotes,
+      highlights: dataHighlights,
+      title: document.title || window.location.hostname,
+      updatedAt: Date.now()
     }
   });
 };
@@ -598,3 +753,82 @@ document.addEventListener('focusout', (e) => {
 undoBtn.addEventListener('click', triggerAutoSave);
 redoBtn.addEventListener('click', triggerAutoSave);
 document.getElementById('ws-confirm-clear').addEventListener('click', triggerAutoSave);
+
+// ==========================================
+// --- 11. FIREBASE AUTO-LOAD ENGINE ---
+// ==========================================
+
+const loadSavedData = () => {
+  chrome.runtime.sendMessage({ action: 'auto_load' }, (response) => {
+    if (response && response.status === 'success') {
+      const savedData = response.data;
+
+      // 1. Restore Canvas Strokes
+      if (savedData.strokes && savedData.strokes.length > 0) {
+        // Overwrite the local strokes array with the saved ones
+        strokes = savedData.strokes; 
+        
+        // Call your existing function that redraws the canvas
+        // (Assuming your redraw function is called redrawCanvas. Change this if yours is named differently!)
+        redrawCanvas(); 
+      }
+
+      // 2. Restore Sticky Notes
+      if (savedData.notes && savedData.notes.length > 0) {
+        savedData.notes.forEach(noteData => {
+          // Recreate the exact HTML structure of your notes
+          const noteEl = document.createElement('div');
+          noteEl.className = 'ws-sticky-note';
+          noteEl.style.position = 'absolute';
+          noteEl.style.left = noteData.left;
+          noteEl.style.top = noteData.top;
+          
+          noteEl.innerHTML = `
+            <div class="ws-note-header" style="background-color: ${noteData.color};">
+              <span class="ws-close-btn">&times;</span>
+            </div>
+            <textarea class="ws-note-body">${noteData.text}</textarea>
+          `;
+
+          // Re-attach the delete button logic for these loaded notes
+          noteEl.querySelector('.ws-close-btn').addEventListener('click', () => {
+            noteEl.remove();
+            triggerAutoSave(); // Save the deletion to the cloud!
+          });
+
+          // Re-attach the auto-save trigger for when you edit a loaded note
+          noteEl.querySelector('.ws-note-body').addEventListener('focusout', triggerAutoSave);
+
+          document.body.appendChild(noteEl);
+        });
+      }
+
+      // 3. Restore Highlights
+      if (savedData.highlights && savedData.highlights.length > 0) {
+        savedData.highlights.forEach(highlightData => {
+          try {
+            const range = deserializeRange(highlightData);
+            if (range) {
+              if (range.toString().trim() === highlightData.text.trim()) {
+                const span = document.createElement('span');
+                span.className = 'ws-highlight';
+                span.dataset.bgColor = highlightData.color;
+                span.style.backgroundColor = highlightData.color;
+                span.style.color = 'inherit';
+                range.surroundContents(span);
+              } else {
+                console.warn("WebScribe: Highlight text mismatch. Expected:", highlightData.text, "Got:", range.toString());
+              }
+            }
+          } catch (err) {
+            console.error("WebScribe: Error restoring highlight:", err);
+          }
+        });
+      }
+    }
+  });
+};
+
+// Trigger the load when the extension initializes!
+// Wait a tiny bit to ensure the canvas is fully injected into the page first.
+setTimeout(loadSavedData, 500);
