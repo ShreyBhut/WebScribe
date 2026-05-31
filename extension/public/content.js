@@ -19,7 +19,12 @@ style.textContent = `
   .ws-btn.ws-active { background: #ff6b00; color: #ffffff; }
   .ws-eraser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #000000; margin-left: 8px; }
   .ws-eraser-container.ws-show { display: flex; }
+  .ws-shape-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #ff6b00; margin-left: 8px; }
+  .ws-shape-container.ws-show { display: flex; }
+  .ws-laser-container { display: none; flex-direction: column; gap: 2px; padding-left: 12px; border-left: 2px solid #ff2222; margin-left: 8px; }
+  .ws-laser-container.ws-show { display: flex; }
   .ws-divider { height: 2px; background: #000000; margin: 4px 0; }
+  .ws-laser-cursor { cursor: crosshair !important; }
   .ws-color-section { display: flex; flex-direction: column; gap: 6px; padding: 4px; font-size: 12px; font-weight: bold; color: #111827; }
   .ws-custom-row { display: flex; align-items: center; justify-content: space-between; }
   .ws-color-row { display: flex; gap: 6px; justify-content: space-between; margin-top: 2px; }
@@ -135,10 +140,25 @@ document.addEventListener('mouseup', () => {
 });
 
 // --- 5. TOOLS GENERATOR ---
+const SHAPE_TOOLS = ['shape-rect', 'shape-circle', 'shape-arrow'];
+
 const updateActiveButton = () => {
   document.querySelectorAll('.ws-btn-tool').forEach(btn => {
     btn.classList.toggle('ws-active', btn.dataset.tool === currentTool);
   });
+  // Manually highlight main toggles if one of their sub-tools is active
+  const shapeMain = document.querySelector('[data-tool="shape-toggle"]');
+  if (shapeMain) {
+    shapeMain.classList.toggle('ws-active', SHAPE_TOOLS.includes(currentTool));
+  }
+  const eraserMain = document.querySelector('[data-tool="eraser-toggle"]');
+  if (eraserMain) {
+    eraserMain.classList.toggle('ws-active', ['eraser-normal', 'eraser-stroke'].includes(currentTool));
+  }
+  const laserMain = document.querySelector('[data-tool="laser-toggle"]');
+  if (laserMain) {
+    laserMain.classList.toggle('ws-active', ['laser-dot', 'laser-trail'].includes(currentTool));
+  }
 };
 
 const createToolButton = (id, label, isTool = true) => {
@@ -159,8 +179,60 @@ const createToolButton = (id, label, isTool = true) => {
 menu.appendChild(createToolButton('cursor', '🖱️ Cursor'));
 menu.appendChild(createToolButton('highlighter', '🖍️ Highlight'));
 menu.appendChild(createToolButton('pen', '🖋️ Pen'));
+
+// --- LASER POINTER SUB-MENU ---
+let isLaserOpen = false;
+const laserMainBtn = createToolButton('laser-toggle', '🔴 Laser', false);
+const laserContainer = document.createElement('div');
+laserContainer.className = 'ws-laser-container';
+
+const laserDot = createToolButton('laser-dot', '• Dot Mode');
+const laserTrail = createToolButton('laser-trail', '• Trail Mode');
+laserContainer.appendChild(laserDot);
+laserContainer.appendChild(laserTrail);
+
+laserMainBtn.addEventListener('click', () => {
+  isLaserOpen = !isLaserOpen;
+  laserContainer.classList.toggle('ws-show', isLaserOpen);
+  // Default to the last chosen/active mode
+  currentTool = activeLaserMode;
+  updateActiveButton();
+  updateCanvasInteractivity();
+});
+
+laserDot.addEventListener('click', () => {
+  activeLaserMode = 'laser-dot';
+});
+laserTrail.addEventListener('click', () => {
+  activeLaserMode = 'laser-trail';
+});
+
+menu.appendChild(laserMainBtn);
+menu.appendChild(laserContainer);
 menu.appendChild(createToolButton('note', '📝 Note'));
 
+// --- SHAPE TOOLS SUB-MENU ---
+let isShapeOpen = false;
+const shapeMainBtn = createToolButton('shape-toggle', '⬡ Shapes', false);
+const shapeContainer = document.createElement('div');
+shapeContainer.className = 'ws-shape-container';
+
+const shapeRect  = createToolButton('shape-rect',   '▭ Rectangle');
+const shapeCircle = createToolButton('shape-circle', '○ Circle');
+const shapeArrow  = createToolButton('shape-arrow',  '↗ Arrow');
+shapeContainer.appendChild(shapeRect);
+shapeContainer.appendChild(shapeCircle);
+shapeContainer.appendChild(shapeArrow);
+
+shapeMainBtn.addEventListener('click', () => {
+  isShapeOpen = !isShapeOpen;
+  shapeContainer.classList.toggle('ws-show', isShapeOpen);
+});
+
+menu.appendChild(shapeMainBtn);
+menu.appendChild(shapeContainer);
+
+// --- ERASER TOOLS SUB-MENU ---
 const eraserMainBtn = createToolButton('eraser-toggle', '🧼 Eraser', false);
 const eraserContainer = document.createElement('div');
 eraserContainer.className = 'ws-eraser-container';
@@ -309,24 +381,195 @@ let strokes = [];
 let currentStroke = null; 
 let snapshotBeforeDraw = []; 
 
-const drawSingleStroke = (stroke) => {
+// --- SHAPE PREVIEW STATE ---
+let isDrawingShape = false;
+let shapeStart = null; // {x, y} in page coords
+
+// --- LASER POINTER STATE ---
+let laserStrokes = []; // [{points, born, opacity}]
+let laserAnimRunning = false;
+let laserDotPos = null; // {x, y} coordinates of active dot mode cursor
+let activeLaserMode = 'laser-trail'; // Default active laser mode ('laser-dot' or 'laser-trail')
+
+// ---- DRAW HELPERS ----
+
+const drawArrowhead = (x1, y1, x2, y2, color, alpha) => {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const size = 14;
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - size * Math.cos(angle - Math.PI / 6), y2 - size * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(x2 - size * Math.cos(angle + Math.PI / 6), y2 - size * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawShape = (stroke, alpha) => {
+  if (!stroke.start || !stroke.end) return;
+  const { x: x1, y: y1 } = stroke.start;
+  const { x: x2, y: y2 } = stroke.end;
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (stroke.tool === 'shape-rect') {
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  } else if (stroke.tool === 'shape-circle') {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (stroke.tool === 'shape-arrow') {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    drawArrowhead(x1, y1, x2, y2, stroke.color, alpha);
+  }
+  if (stroke.tool !== 'shape-circle' && stroke.tool !== 'shape-arrow') ctx.stroke();
+  ctx.restore();
+};
+
+// --- LASER PREMIUM RENDERING HELPERS ---
+const getNeonColor = (hex) => {
+  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+  if (!result) return '#FF073A'; // Neon Red default
+  
+  const r = parseInt(result[1], 16);
+  const g = parseInt(result[2], 16);
+  const b = parseInt(result[3], 16);
+  
+  if (r > g && r > b) {
+    if (g > 80) return '#FF5F00'; // Neon Orange
+    return '#FF073A'; // Neon Red
+  } else if (g > r && g > b) {
+    return '#00FF66'; // Neon Green
+  } else if (b > r && b > g) {
+    return '#00F0FF'; // Neon Blue
+  } else {
+    return '#FF073A'; // Default to Neon Red
+  }
+};
+
+const drawLaserStroke = (stroke, alpha) => {
   if (stroke.points.length < 1) return;
+  const neonColor = getNeonColor(stroke.color);
+  const strokeAlpha = alpha !== undefined ? alpha : 1;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalCompositeOperation = 'source-over';
+
+  // --- LAYER 2 & 3: Neon Glow + Soft Drop-Off Blur ---
+  ctx.beginPath();
+  ctx.strokeStyle = neonColor;
+  ctx.lineWidth = 10;
+  ctx.shadowColor = neonColor;
+  ctx.shadowBlur = 12;
+  ctx.globalAlpha = strokeAlpha;
+  
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // --- LAYER 1: The Inner Core (Bright White) ---
+  ctx.save();
+  ctx.beginPath();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 3.5;
+  ctx.globalAlpha = strokeAlpha;
+  
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  }
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawLaserDot = (x, y) => {
+  const neonColor = getNeonColor(currentColor);
+  
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  
+  // Layer 3 (Soft Drop-Off) & Layer 2 (Neon Glow)
+  ctx.shadowColor = neonColor;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = neonColor;
+  ctx.beginPath();
+  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Layer 1: Inner Core (Bright White)
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(x, y, 3, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.restore();
+};
+
+const drawSingleStroke = (stroke, alpha) => {
+  if (stroke.tool === 'shape-rect' || stroke.tool === 'shape-circle' || stroke.tool === 'shape-arrow') {
+    drawShape(stroke, alpha);
+    return;
+  }
+  if (stroke.tool === 'laser' || stroke.tool === 'laser-trail') {
+    drawLaserStroke(stroke, alpha);
+    return;
+  }
+  if (stroke.points.length < 1) return;
+  ctx.save();
   ctx.beginPath();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (stroke.tool === 'pen') {
-    ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = 4;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = 4;
+    if (alpha !== undefined) ctx.globalAlpha = alpha;
   } else if (stroke.tool === 'eraser-normal') {
     ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 25;
   }
   ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
   for (let i = 1; i < stroke.points.length; i++) { ctx.lineTo(stroke.points[i].x, stroke.points[i].y); }
   ctx.stroke();
+  ctx.restore();
 };
 
 const redrawCanvas = () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   strokes.forEach(stroke => drawSingleStroke(stroke));
   if (currentStroke) drawSingleStroke(currentStroke);
+  // Draw live laser strokes (fade handled by laserLoop)
+  laserStrokes.forEach(ls => drawSingleStroke(ls, ls.opacity));
+  
+  // Draw active laser dot in Dot Mode
+  if (currentTool === 'laser-dot' && laserDotPos) {
+    drawLaserDot(laserDotPos.x, laserDotPos.y);
+  }
 };
 
 const resizeCanvas = () => {
@@ -335,8 +578,18 @@ const resizeCanvas = () => {
 resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
 const updateCanvasInteractivity = () => {
-  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) { canvas.style.pointerEvents = 'auto'; } 
-  else { canvas.style.pointerEvents = 'none'; }
+  const isDrawTool = ['pen', 'laser', 'laser-dot', 'laser-trail', 'eraser-normal', 'eraser-stroke', ...SHAPE_TOOLS].includes(currentTool);
+  if (isDrawTool) {
+    canvas.style.pointerEvents = 'auto';
+    if (currentTool === 'laser-dot') {
+      canvas.style.cursor = 'none'; // Always hide browser cursor in Dot Mode
+    } else {
+      canvas.style.cursor = ['laser', 'laser-trail'].includes(currentTool) ? 'crosshair' : 'default';
+    }
+  } else {
+    canvas.style.pointerEvents = 'none';
+    canvas.style.cursor = 'default';
+  }
 };
 
 const checkStrokeIntersection = (x, y) => {
@@ -352,18 +605,71 @@ const checkStrokeIntersection = (x, y) => {
   if (wasStrokeRemoved) redrawCanvas(); 
 };
 
+// ==========================================
+// --- LASER POINTER FADE LOOP ---
+// ==========================================
+const LASER_DURATION = 1500; // ms until fully faded (1.5 seconds)
+
+const laserLoop = () => {
+  const now = Date.now();
+  let anyAlive = false;
+  
+  // If user is actively holding down mouse/stylus to draw a trail, prevent fading of existing lines
+  const isCurrentlyDrawingLaser = isDrawingCanvas && (currentTool === 'laser-trail' || currentTool === 'laser');
+  if (isCurrentlyDrawingLaser) {
+    laserStrokes.forEach(ls => {
+      ls.born = now;
+      ls.opacity = 1;
+    });
+  }
+
+  laserStrokes = laserStrokes.filter(ls => {
+    const age = now - ls.born;
+    ls.opacity = Math.max(0, 1 - age / LASER_DURATION);
+    return ls.opacity > 0;
+  });
+  if (laserStrokes.length > 0) anyAlive = true;
+  // Also show the in-progress laser stroke
+  if (currentStroke && (currentStroke.tool === 'laser' || currentStroke.tool === 'laser-trail')) anyAlive = true;
+  redrawCanvas();
+  if (anyAlive) {
+    requestAnimationFrame(laserLoop);
+  } else {
+    laserAnimRunning = false;
+  }
+};
+
+// ==========================================
 // --- DRAWING MOUSE EVENTS ---
+// ==========================================
 let isDrawingCanvas = false;
 
 canvas.addEventListener('mousedown', (e) => {
-  if (!['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) return;
-  
-  snapshotBeforeDraw = JSON.parse(JSON.stringify(strokes)); 
-  
+  const allDrawTools = ['pen', 'laser', 'laser-dot', 'laser-trail', 'eraser-normal', 'eraser-stroke', ...SHAPE_TOOLS];
+  if (!allDrawTools.includes(currentTool)) return;
+
+  snapshotBeforeDraw = JSON.parse(JSON.stringify(strokes));
+
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     isDrawingCanvas = true;
     currentStroke = { tool: currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
     redrawCanvas();
+  } else if (currentTool === 'laser-dot') {
+    isDrawingCanvas = true;
+    laserDotPos = { x: e.pageX, y: e.pageY };
+    redrawCanvas();
+  } else if (currentTool === 'laser-trail' || currentTool === 'laser') {
+    isDrawingCanvas = true;
+    currentStroke = { tool: currentTool === 'laser' ? 'laser-trail' : currentTool, color: currentColor, points: [{ x: e.pageX, y: e.pageY }] };
+    // Fade reset: instantly make all existing laser strokes bright again
+    laserStrokes.forEach(ls => {
+      ls.born = Date.now();
+    });
+    redrawCanvas();
+  } else if (SHAPE_TOOLS.includes(currentTool)) {
+    isDrawingShape = true;
+    shapeStart = { x: e.pageX, y: e.pageY };
+    currentStroke = { tool: currentTool, color: currentColor, start: shapeStart, end: { ...shapeStart } };
   } else if (currentTool === 'eraser-stroke') {
     checkStrokeIntersection(e.pageX, e.pageY);
   }
@@ -374,9 +680,16 @@ canvas.addEventListener('mousemove', (e) => {
      if (e.buttons !== 1) return;
      checkStrokeIntersection(e.pageX, e.pageY);
   }
-  
-  if (!isDrawingCanvas) return;
-  
+
+  // Handle dot pointer tracking (dot acts as the cursor)
+  if (currentTool === 'laser-dot') {
+    laserDotPos = { x: e.pageX, y: e.pageY };
+    redrawCanvas();
+    return;
+  }
+
+  if (!isDrawingCanvas && !isDrawingShape) return;
+
   if (currentTool === 'pen' || currentTool === 'eraser-normal') {
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
@@ -398,10 +711,50 @@ canvas.addEventListener('mousemove', (e) => {
       }
     }
     redrawCanvas();
-  } 
+  } else if ((currentTool === 'laser-trail' || currentTool === 'laser') && isDrawingCanvas) {
+    currentStroke.points.push({ x: e.pageX, y: e.pageY });
+    // Fade reset: keep all other laser strokes fully bright while drawing
+    laserStrokes.forEach(ls => {
+      ls.born = Date.now();
+    });
+    redrawCanvas();
+  } else if (isDrawingShape && currentStroke) {
+    // Live shape preview: update end point and redraw
+    currentStroke.end = { x: e.pageX, y: e.pageY };
+    redrawCanvas();
+  }
 });
 
 canvas.addEventListener('mouseup', () => {
+  // Commit laser stroke to fade queue
+  if ((currentTool === 'laser-trail' || currentTool === 'laser') && isDrawingCanvas && currentStroke) {
+    const finishedLaser = { ...currentStroke, born: Date.now(), opacity: 1 };
+    laserStrokes.push(finishedLaser);
+    currentStroke = null;
+    isDrawingCanvas = false;
+    if (!laserAnimRunning) { laserAnimRunning = true; requestAnimationFrame(laserLoop); }
+    return; // Laser strokes are NOT saved to history
+  }
+
+  // Handle laser-dot mouseup
+  if (currentTool === 'laser-dot') {
+    isDrawingCanvas = false;
+    // Keep laserDotPos as active to continue tracking on hover
+    redrawCanvas();
+    return;
+  }
+
+  // Commit shape stroke to permanent strokes
+  if (isDrawingShape && currentStroke) {
+    strokes.push(currentStroke);
+    currentStroke = null;
+    isDrawingShape = false;
+    redrawCanvas();
+    actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw, currentStrokes: JSON.parse(JSON.stringify(strokes)) });
+    redoHistory = [];
+    return;
+  }
+
   if (isDrawingCanvas || currentTool === 'eraser-stroke') { 
     if (isDrawingCanvas && currentStroke) { 
       strokes.push(currentStroke); 
@@ -413,6 +766,38 @@ canvas.addEventListener('mouseup', () => {
     // Save current strokes state alongside previous state for Redo logic
     actionHistory.push({ type: 'canvas', previousStrokes: snapshotBeforeDraw, currentStrokes: JSON.parse(JSON.stringify(strokes)) });
     redoHistory = []; // Wipe redo stack when a new action is performed
+  }
+});
+
+// Ensure Dot Mode tracks immediately when cursor enters canvas
+canvas.addEventListener('mouseenter', (e) => {
+  if (currentTool === 'laser-dot') {
+    laserDotPos = { x: e.pageX, y: e.pageY };
+    redrawCanvas();
+  }
+});
+
+// Prevent stuck pointer/dot modes when mouse leaves canvas
+canvas.addEventListener('mouseleave', () => {
+  if (currentTool === 'laser-dot') {
+    laserDotPos = null;
+    isDrawingCanvas = false;
+    redrawCanvas();
+  } else if (isDrawingCanvas && (currentTool === 'laser-trail' || currentTool === 'laser')) {
+    if (currentStroke) {
+      const finishedLaser = { ...currentStroke, born: Date.now(), opacity: 1 };
+      laserStrokes.push(finishedLaser);
+      currentStroke = null;
+    }
+    isDrawingCanvas = false;
+    if (!laserAnimRunning) { laserAnimRunning = true; requestAnimationFrame(laserLoop); }
+  } else if (isDrawingCanvas) {
+    if (currentStroke) {
+      strokes.push(currentStroke);
+      currentStroke = null;
+    }
+    isDrawingCanvas = false;
+    redrawCanvas();
   }
 });
 
@@ -737,7 +1122,8 @@ const triggerAutoSave = () => {
 // --- BIND TRIGGERS ---
 // Listen for canvas drawing completion
 canvas.addEventListener('mouseup', () => {
-  if (['pen', 'eraser-normal', 'eraser-stroke'].includes(currentTool)) {
+  // Shapes and regular pen/eraser strokes get saved; laser is ephemeral and intentionally skipped
+  if (['pen', 'eraser-normal', 'eraser-stroke', ...SHAPE_TOOLS].includes(currentTool)) {
     triggerAutoSave();
   }
 });
