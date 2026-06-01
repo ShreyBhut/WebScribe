@@ -422,6 +422,7 @@ document.body.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
 let strokes = [];
+const ERASER_RADIUS = 6;
 let currentStroke = null;
 let snapshotBeforeDraw = [];
 
@@ -602,7 +603,7 @@ const drawSingleStroke = (stroke, alpha) => {
     ctx.lineWidth = 4;
     if (alpha !== undefined) ctx.globalAlpha = alpha;
   } else if (stroke.tool === 'eraser-normal') {
-    ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 25;
+    ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = ERASER_RADIUS * 2;
   }
   ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
   for (let i = 1; i < stroke.points.length; i++) { ctx.lineTo(stroke.points[i].x, stroke.points[i].y); }
@@ -641,6 +642,33 @@ const updateCanvasInteractivity = () => {
     canvas.style.pointerEvents = 'none';
     canvas.style.cursor = 'default';
   }
+};
+
+const pointToSegmentDistance = (px, py, x1, y1, x2, y2) => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+};
+
+const segmentsIntersect = (A, B, C, D) => {
+  const ccw = (p1, p2, p3) => (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
+  return ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D);
+};
+
+const segmentToSegmentDistance = (A, B, C, D) => {
+  if (segmentsIntersect(A, B, C, D)) {
+    return 0;
+  }
+  return Math.min(
+    pointToSegmentDistance(A.x, A.y, C.x, C.y, D.x, D.y),
+    pointToSegmentDistance(B.x, B.y, C.x, C.y, D.x, D.y),
+    pointToSegmentDistance(C.x, C.y, A.x, A.y, B.x, B.y),
+    pointToSegmentDistance(D.x, D.y, A.x, A.y, B.x, B.y)
+  );
 };
 
 const checkStrokeIntersection = (x, y) => {
@@ -745,35 +773,85 @@ canvas.addEventListener('mousemove', (e) => {
     currentStroke.points.push({ x: e.pageX, y: e.pageY });
 
     if (currentTool === 'eraser-normal') {
-      const eraserRadius = 15;
+      const pointsCount = currentStroke.points.length;
+      const eraserA = pointsCount > 1 ? currentStroke.points[pointsCount - 2] : currentStroke.points[0];
+      const eraserB = currentStroke.points[pointsCount - 1];
+
       for (let i = strokes.length - 1; i >= 0; i--) {
         const stroke = strokes[i];
         if (stroke.tool !== 'pen') continue;
-        let newStrokes = []; let currentSegment = [];
-        for (let j = 0; j < stroke.points.length; j++) {
-          const pt = stroke.points[j];
-          if (Math.hypot(pt.x - e.pageX, pt.y - e.pageY) > eraserRadius) { currentSegment.push(pt); }
-          else {
-            if (currentSegment.length > 0) {
-              newStrokes.push({
-                id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
-                tool: 'pen',
-                color: stroke.color,
-                points: currentSegment
-              });
-              currentSegment = [];
+
+        let newStrokes = [];
+        let currentSegment = [];
+
+        if (stroke.points.length === 1) {
+          const pt = stroke.points[0];
+          const dist = pointToSegmentDistance(pt.x, pt.y, eraserA.x, eraserA.y, eraserB.x, eraserB.y);
+          if (dist > ERASER_RADIUS) {
+            newStrokes.push(stroke);
+          }
+        } else {
+          for (let j = 0; j < stroke.points.length; j++) {
+            const pt = stroke.points[j];
+            const isPtInside = pointToSegmentDistance(pt.x, pt.y, eraserA.x, eraserA.y, eraserB.x, eraserB.y) <= ERASER_RADIUS;
+
+            if (isPtInside) {
+              if (currentSegment.length > 0) {
+                newStrokes.push({
+                  id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+                  tool: 'pen',
+                  color: stroke.color,
+                  points: currentSegment
+                });
+                currentSegment = [];
+              }
+            } else {
+              if (currentSegment.length > 0) {
+                const prevPt = currentSegment[currentSegment.length - 1];
+                const segmentCut = segmentToSegmentDistance(prevPt, pt, eraserA, eraserB) <= ERASER_RADIUS;
+                if (segmentCut) {
+                  newStrokes.push({
+                    id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+                    tool: 'pen',
+                    color: stroke.color,
+                    points: currentSegment
+                  });
+                  currentSegment = [pt];
+                } else {
+                  currentSegment.push(pt);
+                }
+              } else {
+                currentSegment.push(pt);
+              }
+            }
+          }
+          if (currentSegment.length > 0) {
+            newStrokes.push({
+              id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+              tool: 'pen',
+              color: stroke.color,
+              points: currentSegment
+            });
+          }
+        }
+
+        let hasChanged = false;
+        if (newStrokes.length !== 1) {
+          hasChanged = true;
+        } else if (newStrokes[0].points.length !== stroke.points.length) {
+          hasChanged = true;
+        } else {
+          for (let k = 0; k < stroke.points.length; k++) {
+            if (newStrokes[0].points[k].x !== stroke.points[k].x || newStrokes[0].points[k].y !== stroke.points[k].y) {
+              hasChanged = true;
+              break;
             }
           }
         }
-        if (currentSegment.length > 0) {
-          newStrokes.push({
-            id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
-            tool: 'pen',
-            color: stroke.color,
-            points: currentSegment
-          });
+
+        if (hasChanged) {
+          strokes.splice(i, 1, ...newStrokes);
         }
-        if (newStrokes.length !== 1 || newStrokes[0].points.length !== stroke.points.length) { strokes.splice(i, 1, ...newStrokes); }
       }
     }
     redrawCanvas();
@@ -823,7 +901,9 @@ canvas.addEventListener('mouseup', () => {
 
   if (isDrawingCanvas || currentTool === 'eraser-stroke') {
     if (isDrawingCanvas && currentStroke) {
-      strokes.push(currentStroke);
+      if (currentTool !== 'eraser-normal') {
+        strokes.push(currentStroke);
+      }
       currentStroke = null;
     }
     isDrawingCanvas = false;
