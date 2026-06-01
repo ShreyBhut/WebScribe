@@ -57,7 +57,7 @@ This starts the server on [http://localhost:5000](http://localhost:5000).
 ### 2. Annotating a Webpage
 Visit any webpage and click the WebScribe logo in the top-right corner to expand the toolbar. 
 
-<img width="100" alt="e2d2fbbc-c495-4346-a7c7-db43335f67c4" src="https://github.com/user-attachments/assets/364c1bb3-1600-473f-9eb4-c953ff702505" />
+<img width="716" height="605" alt="e2d2fbbc-c495-4346-a7c7-db43335f67c4" src="https://github.com/user-attachments/assets/66d1e6a0-6d1f-4611-81bf-f698a8873702" />
 
 From there you can:
 1. **Highlight text** — Select the Highlight tool, then select any text on the page.
@@ -84,8 +84,9 @@ Click the WebScribe icon in the Chrome toolbar to open the popup dashboard:
 
 ## 🌟 Webscribe in the Working
 
-<img width="250" alt="Screenshot 2026-06-02 033538" src="https://github.com/user-attachments/assets/a56b57be-caac-4f6a-b9fb-605c9e5c1702" />
-<img width="250" alt="Screenshot (93)" src="https://github.com/user-attachments/assets/084f4aec-33a8-433e-b255-ff1b78c71fc3" />
+<img width="1920" height="1014" alt="Screenshot (93)" src="https://github.com/user-attachments/assets/71770140-0721-4231-8e63-23b94aa09897" />
+<img width="458" height="691" alt="Screenshot 2026-06-02 033538" src="https://github.com/user-attachments/assets/33993435-7c09-4d5d-934f-16da6c3e1c82" />
+
 
 ## 🧰 Tech Stack
 | Component | Technologies |
