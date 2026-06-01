@@ -644,6 +644,28 @@ const updateCanvasInteractivity = () => {
   }
 };
 
+const densifyPoints = (points, maxSpacing = 2) => {
+  if (points.length < 2) return points;
+  const newPoints = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const p1 = points[i - 1];
+    const p2 = points[i];
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (dist > maxSpacing) {
+      const numSegments = Math.ceil(dist / maxSpacing);
+      for (let j = 1; j < numSegments; j++) {
+        const t = j / numSegments;
+        newPoints.push({
+          x: p1.x + (p2.x - p1.x) * t,
+          y: p1.y + (p2.y - p1.y) * t
+        });
+      }
+    }
+    newPoints.push(p2);
+  }
+  return newPoints;
+};
+
 const pointToSegmentDistance = (px, py, x1, y1, x2, y2) => {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -781,21 +803,26 @@ canvas.addEventListener('mousemove', (e) => {
         const stroke = strokes[i];
         if (stroke.tool !== 'pen') continue;
 
+        const densePoints = densifyPoints(stroke.points, 2);
         let newStrokes = [];
         let currentSegment = [];
+        let touched = false;
 
-        if (stroke.points.length === 1) {
-          const pt = stroke.points[0];
+        if (densePoints.length === 1) {
+          const pt = densePoints[0];
           const dist = pointToSegmentDistance(pt.x, pt.y, eraserA.x, eraserA.y, eraserB.x, eraserB.y);
-          if (dist > ERASER_RADIUS) {
+          if (dist <= ERASER_RADIUS) {
+            touched = true;
+          } else {
             newStrokes.push(stroke);
           }
         } else {
-          for (let j = 0; j < stroke.points.length; j++) {
-            const pt = stroke.points[j];
+          for (let j = 0; j < densePoints.length; j++) {
+            const pt = densePoints[j];
             const isPtInside = pointToSegmentDistance(pt.x, pt.y, eraserA.x, eraserA.y, eraserB.x, eraserB.y) <= ERASER_RADIUS;
 
             if (isPtInside) {
+              touched = true;
               if (currentSegment.length > 0) {
                 newStrokes.push({
                   id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
@@ -810,6 +837,7 @@ canvas.addEventListener('mousemove', (e) => {
                 const prevPt = currentSegment[currentSegment.length - 1];
                 const segmentCut = segmentToSegmentDistance(prevPt, pt, eraserA, eraserB) <= ERASER_RADIUS;
                 if (segmentCut) {
+                  touched = true;
                   newStrokes.push({
                     id: stroke.id || ('s_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
                     tool: 'pen',
@@ -835,21 +863,7 @@ canvas.addEventListener('mousemove', (e) => {
           }
         }
 
-        let hasChanged = false;
-        if (newStrokes.length !== 1) {
-          hasChanged = true;
-        } else if (newStrokes[0].points.length !== stroke.points.length) {
-          hasChanged = true;
-        } else {
-          for (let k = 0; k < stroke.points.length; k++) {
-            if (newStrokes[0].points[k].x !== stroke.points[k].x || newStrokes[0].points[k].y !== stroke.points[k].y) {
-              hasChanged = true;
-              break;
-            }
-          }
-        }
-
-        if (hasChanged) {
+        if (touched) {
           strokes.splice(i, 1, ...newStrokes);
         }
       }
