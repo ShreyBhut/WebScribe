@@ -184,7 +184,7 @@ document.addEventListener('mouseup', () => {
 });
 
 // --- 5. TOOLS GENERATOR ---
-const SHAPE_TOOLS = ['shape-rect', 'shape-circle', 'shape-arrow'];
+const SHAPE_TOOLS = ['shape-rect', 'shape-circle', 'shape-arrow', 'shape-star'];
 
 const updateActiveButton = () => {
   document.querySelectorAll('.ws-btn-tool').forEach(btn => {
@@ -264,9 +264,11 @@ shapeContainer.className = 'ws-shape-container';
 const shapeRect = createToolButton('shape-rect', '▭ Rectangle');
 const shapeCircle = createToolButton('shape-circle', '○ Circle');
 const shapeArrow = createToolButton('shape-arrow', '↗ Arrow');
+const shapeStar = createToolButton('shape-star', '⭐ Star');
 shapeContainer.appendChild(shapeRect);
 shapeContainer.appendChild(shapeCircle);
 shapeContainer.appendChild(shapeArrow);
+shapeContainer.appendChild(shapeStar);
 
 shapeMainBtn.addEventListener('click', () => {
   isShapeOpen = !isShapeOpen;
@@ -482,6 +484,21 @@ const drawShape = (stroke, alpha) => {
     ctx.lineTo(x2, y2);
     ctx.stroke();
     drawArrowhead(x1, y1, x2, y2, stroke.color, alpha);
+  } else if (stroke.tool === 'shape-star') {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    const spikes = 5;
+    const step = Math.PI / spikes;
+    const rot = -Math.PI / 2;
+    ctx.moveTo(cx + rx * Math.cos(rot), cy + ry * Math.sin(rot));
+    for (let i = 1; i < 2 * spikes; i++) {
+      const angle = rot + i * step;
+      const r_factor = (i % 2 === 0) ? 1 : 0.4;
+      ctx.lineTo(cx + rx * r_factor * Math.cos(angle), cy + ry * r_factor * Math.sin(angle));
+    }
+    ctx.closePath();
   }
   if (stroke.tool !== 'shape-circle' && stroke.tool !== 'shape-arrow') ctx.stroke();
   ctx.restore();
@@ -585,7 +602,7 @@ const drawLaserDot = (x, y) => {
 };
 
 const drawSingleStroke = (stroke, alpha) => {
-  if (stroke.tool === 'shape-rect' || stroke.tool === 'shape-circle' || stroke.tool === 'shape-arrow') {
+  if (SHAPE_TOOLS.includes(stroke.tool)) {
     drawShape(stroke, alpha);
     return;
   }
@@ -693,14 +710,83 @@ const segmentToSegmentDistance = (A, B, C, D) => {
   );
 };
 
+const isPointNearShape = (stroke, x, y, detectionRadius) => {
+  if (!stroke.start || !stroke.end) return false;
+  const { x: x1, y: y1 } = stroke.start;
+  const { x: x2, y: y2 } = stroke.end;
+
+  if (stroke.tool === 'shape-arrow') {
+    return pointToSegmentDistance(x, y, x1, y1, x2, y2) < detectionRadius;
+  }
+
+  if (stroke.tool === 'shape-rect') {
+    const d1 = pointToSegmentDistance(x, y, x1, y1, x2, y1);
+    const d2 = pointToSegmentDistance(x, y, x1, y2, x2, y2);
+    const d3 = pointToSegmentDistance(x, y, x1, y1, x1, y2);
+    const d4 = pointToSegmentDistance(x, y, x2, y1, x2, y2);
+    return Math.min(d1, d2, d3, d4) < detectionRadius;
+  }
+
+  if (stroke.tool === 'shape-circle') {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    if (rx === 0 && ry === 0) return Math.hypot(x - cx, y - cy) < detectionRadius;
+    const theta = Math.atan2(y - cy, x - cx);
+    const bx = cx + rx * Math.cos(theta);
+    const by = cy + ry * Math.sin(theta);
+    return Math.hypot(x - bx, y - by) < detectionRadius;
+  }
+
+  if (stroke.tool === 'shape-star') {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    const spikes = 5;
+    const step = Math.PI / spikes;
+    const rot = -Math.PI / 2;
+    const vertices = [];
+    for (let j = 0; j < 2 * spikes; j++) {
+      const angle = rot + j * step;
+      const r_factor = (j % 2 === 0) ? 1 : 0.4;
+      vertices.push({
+        x: cx + rx * r_factor * Math.cos(angle),
+        y: cy + ry * r_factor * Math.sin(angle)
+      });
+    }
+    for (let j = 0; j < 2 * spikes; j++) {
+      const p1 = vertices[j];
+      const p2 = vertices[(j + 1) % (2 * spikes)];
+      if (pointToSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y) < detectionRadius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return false;
+};
+
 const checkStrokeIntersection = (x, y) => {
   let wasStrokeRemoved = false;
   const detectionRadius = 16;
   for (let i = strokes.length - 1; i >= 0; i--) {
     const stroke = strokes[i];
-    if (stroke.tool !== 'pen') continue;
-    for (let pt of stroke.points) {
-      if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) { strokes.splice(i, 1); wasStrokeRemoved = true; break; }
+    if (stroke.tool === 'pen') {
+      for (let pt of stroke.points) {
+        if (Math.hypot(pt.x - x, pt.y - y) < detectionRadius) {
+          strokes.splice(i, 1);
+          wasStrokeRemoved = true;
+          break;
+        }
+      }
+    } else if (SHAPE_TOOLS.includes(stroke.tool)) {
+      if (isPointNearShape(stroke, x, y, detectionRadius)) {
+        strokes.splice(i, 1);
+        wasStrokeRemoved = true;
+      }
     }
   }
   if (wasStrokeRemoved) redrawCanvas();
